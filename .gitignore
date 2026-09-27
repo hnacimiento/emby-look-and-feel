@@ -1,0 +1,44 @@
+# Reference/example material kept locally, not part of the published project
+example/
+
+# Never commit real credentials, backups, or run artifacts if this repo is
+# ever cloned onto the TrueNAS host itself
+secrets/
+*.env
+backups/
+*.log
+manifest-*.json
+SHA256SUMS-*.txt
+rollback-*.sh
+reapply-*.sh
+config.json
+translation-*.txt
+known-source-sha256sums.txt
+.emby-installer-state
+
+# Conexión local a TrueNAS (SSH host/puerto/usuario/ruta de clave, keys
+# opcionales para bootstrapear el wizard sin interacción) -- nunca se pega
+# en el chat, se completa directo en este archivo. Ya cubierto por el
+# patrón "*.env" de arriba; se deja explícito acá para que se vea a simple
+# vista qué hay en deploy/.
+deploy/truenas.env
+
+# Deployment-specific values for the installer (container, URLs, proxies,
+# region/languages). The tracked template is install-emby-custom.conf.example.
+install-emby-custom.conf
+
+# Notas de investigación con datos concretos del entorno real (nombres de
+# container, IPs, topología de red) -- útiles para retomar el trabajo, pero
+# no pensadas para publicarse si este repo se comparte alguna vez. Igual
+# criterio que example/.
+docs/investigations/
+
+# Copias de respaldo de versiones viejas/manuales de scripts y docs (traídas
+# del server o guardadas a mano localmente) -- historial de referencia, no
+# parte del proyecto publicado.
+backup/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp

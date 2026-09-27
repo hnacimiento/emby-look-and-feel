@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Docker de mentira para tests de integración. No toca contenedores reales:
+# 'cp'/'exec' operan directamente sobre el filesystem del test host, porque
+# los scripts bajo prueba se generan (ver tests/lib/container_stub.sh) con
+# DASHBOARD_DIR/INDEX apuntando a un directorio local de scratch, nunca a
+# rutas reales como /system/dashboard-ui. Por eso no hace falta reescribir
+# ninguna ruta acá: lo que le llega a 'exec'/'cp' ya son rutas locales.
+#
+# Comportamiento controlado por variables de entorno (todas opcionales,
+# ver defaults abajo):
+#   STUB_DOCKER_CONTAINER_EXISTS=1|0
+#   STUB_DOCKER_CONTAINER_ID=<hex>
+#   STUB_DOCKER_CONTAINER_RUNNING=true|false
+#   STUB_DOCKER_CP_FAIL_PATTERN=<substring>   -- si src o dest lo contiene, falla ese cp
+#   STUB_DOCKER_EXEC_FAIL_PATTERN=<substring> -- si el comando lo contiene, falla ese exec
+#   STUB_DOCKER_PS_OUTPUT=<texto>             -- salida cruda para 'docker ps -a --format ...'
+set -Eeuo pipefail
+
+case "${1:-}" in
+    inspect)
+        shift
+        FORMAT=""
+        TARGET=""
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                -f) FORMAT="$2"; shift 2 ;;
+                *) TARGET="$1"; shift ;;
+            esac
+        done
+        if [ "${STUB_DOCKER_CONTAINER_EXISTS:-1}" != "1" ]; then
+            echo "Error: No such object: $TARGET" >&2
+            exit 1
+        fi
+        case "$FORMAT" in
+            "{{.Id}}") echo "${STUB_DOCKER_CONTAINER_ID:-deadbeef0000}" ;;
+            "{{.State.Running}}") echo "${STUB_DOCKER_CONTAINER_RUNNING:-true}" ;;
+            "") ;; # sin -f: docker inspect solo se usa para chequear existencia
+        esac
+        exit 0
+        ;;
+    cp)
+        shift
+        SRC="$1"; DEST="$2"
+        SRC="${SRC#*:}"
+        DEST="${DEST#*:}"
+        if [ -n "${STUB_DOCKER_CP_FAIL_PATTERN:-}" ]; then
+            case "$SRC$DEST" in
+                *"$STUB_DOCKER_CP_FAIL_PATTERN"*)
+                    echo "stub docker cp: fallo simulado ($SRC -> $DEST)" >&2
+                    exit 1
+                    ;;
+            esac
+        fi
+        mkdir -p "$(dirname "$DEST")"
+        cp "$SRC" "$DEST"
+        ;;
+    exec)
+        shift
+        [ "${1:-}" = "-i" ] && shift
+        shift # nombre del container, no nos importa
+        CMD="$*"
+        if [ -n "${STUB_DOCKER_EXEC_FAIL_PATTERN:-}" ]; then
+            case "$CMD" in
+                *"$STUB_DOCKER_EXEC_FAIL_PATTERN"*)
+                    echo "stub docker exec: fallo simulado ($CMD)" >&2
+                    exit 1
+                    ;;
+            esac
+        fi
+        "$@"
+        ;;
+    ps)
+        printf '%s\n' "${STUB_DOCKER_PS_OUTPUT:-}"
+        ;;
+    *)
+        echo "stub docker: subcomando no soportado: ${1:-(ninguno)}" >&2
+        exit 1
+        ;;
+esac

@@ -1,0 +1,16 @@
+# ============================================================
+# Keys reales de las APIs de terceros para el API proxy de los addons.
+#
+# Copiar a /etc/nginx/snippets/emby-api-keys.conf, completar, y:
+#     chmod 600 /etc/nginx/snippets/emby-api-keys.conf
+# (nginx lee la configuración como root al arrancar/recargar; los workers
+# no necesitan leer el archivo). Este archivo .example NO lleva valores.
+#
+# Se definen como 'map' porque nginx no permite 'set' en contexto http y
+# no lee variables de entorno en las directivas; un map con 'default' es
+# la forma estándar de tener una "constante" disponible en las locations.
+# ============================================================
+
+map $host $emby_tmdb_api_key      { default ""; }
+map $host $emby_mdblist_api_key   { default ""; }
+map $host $emby_kinopoisk_api_key { default ""; }

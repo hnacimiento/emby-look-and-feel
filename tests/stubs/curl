@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Curl de mentira para tests de integración: responde según STUB_CURL_*, sin
+# pegarle a ninguna red real. No necesita entender -K/--header/etc.: los
+# tests solo verifican qué hace el script bajo prueba con el status/body que
+# curl devuelve, no qué headers mandó.
+#
+#   STUB_CURL_STATUS=<código HTTP>   (default 200)
+#   STUB_CURL_BODY=<cuerpo crudo>    (default '{}')
+#   STUB_CURL_RECORD_BODY_FILE=<ruta> -- si está, cada '--data-binary @archivo'
+#                                        que reciba se anexa ahí (una línea por
+#                                        request), para poder afirmar QUÉ payload
+#                                        mandó el script (p.ej. CustomCss vacío).
+set -Eeuo pipefail
+
+OUTPUT_FILE=""
+WRITE_OUT=""
+DATA_FILE=""
+ARGS=("$@")
+i=0
+while [ "$i" -lt "${#ARGS[@]}" ]; do
+    case "${ARGS[$i]}" in
+        --output) i=$((i + 1)); OUTPUT_FILE="${ARGS[$i]}" ;;
+        --write-out) i=$((i + 1)); WRITE_OUT="${ARGS[$i]}" ;;
+        --data-binary) i=$((i + 1)); DATA_FILE="${ARGS[$i]#@}" ;;
+    esac
+    i=$((i + 1))
+done
+
+if [ -n "${STUB_CURL_RECORD_BODY_FILE:-}" ] && [ -n "$DATA_FILE" ] && [ -f "$DATA_FILE" ]; then
+    { cat "$DATA_FILE"; echo; } >> "$STUB_CURL_RECORD_BODY_FILE"
+fi
+
+STATUS="${STUB_CURL_STATUS:-200}"
+BODY="${STUB_CURL_BODY:-{}}"
+
+if [ -n "$OUTPUT_FILE" ]; then
+    printf '%s' "$BODY" > "$OUTPUT_FILE"
+else
+    printf '%s' "$BODY"
+fi
+
+if [ "$WRITE_OUT" = "%{http_code}" ]; then
+    printf '%s' "$STATUS"
+fi
+
+case "$STATUS" in
+    2??) exit 0 ;;
+    *) exit 22 ;; # 22 = código real de curl para --fail ante un error HTTP
+esac

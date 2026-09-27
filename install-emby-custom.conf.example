@@ -1,0 +1,135 @@
+# install-emby-custom.conf — deployment/product values for install-emby-custom.sh
+#
+# Copy this file to "install-emby-custom.conf" next to the script (or pass
+# --config=PATH), fill in your values and keep it out of version control
+# (it is gitignored). Everything here is optional: a missing key keeps the
+# script's built-in default. Run `./install-emby-custom.sh --print-config`
+# to see the effective values.
+#
+# Format: KEY="value", one per line, '#' starts a comment. Values are
+# parsed, never executed, and validated by type; unknown keys are an
+# error. API keys do NOT go here — they live in secrets/api.env inside the
+# Emby data path (the script creates it on first run, chmod 600).
+#
+# Precedence: command-line flag > this file > built-in default.
+
+# --- Emby --------------------------------------------------------------------
+
+# Docker container name and Emby base URL. Same as --container= / --emby-url=;
+# leave empty to auto-detect / be asked (or to reuse .emby-installer-state).
+EMBY_CONTAINER=""
+EMBY_URL=""
+
+# How many past installs (backup + logs + rollback/reapply scripts + portable
+# .tgz) to keep. Older ones are pruned after each successful install.
+BACKUP_RETENTION_COUNT="5"
+
+# --- Theme (Embymalism CSS) --------------------------------------------------
+
+# Pin Embymalism.css to a commit SHA or tag of github.com/v1rusnl/Embymalism.
+# Empty = always the latest commit of upstream's main branch.
+CSS_PIN_REF=""
+
+# 1 = Embymalism becomes the default main theme for every user/device that
+# never picked a theme by hand (Dark stays selectable; the admin "Settings
+# theme" is never touched). 0 = only add it to the Theme selector.
+# Same as the --no-default-theme flag when set to 0.
+THEME_SET_AS_DEFAULT="1"
+
+# --- emby-elsewhere.js (where to watch) -------------------------------------
+
+# ISO 3166-1 alpha-2 country code for streaming availability.
+ELSEWHERE_DEFAULT_REGION="US"
+
+# Language of the addon's user interface. Upstream ships its texts in
+# German; the script can translate them phrase by phrase:
+#   en = English (default)   es = Spanish   de = leave upstream's German as is
+ELSEWHERE_UI_LANGUAGE="en"
+
+# Provider filters, '|' separated. Empty = show every provider (upstream
+# default). DEFAULT_PROVIDERS = show ONLY these exact provider names;
+# IGNORE_PROVIDERS = hide these (regex patterns allowed).
+#   ELSEWHERE_DEFAULT_PROVIDERS="Netflix|HBO Max|Disney Plus"
+#   ELSEWHERE_IGNORE_PROVIDERS=".*with Ads|Some Regional Service"
+ELSEWHERE_DEFAULT_PROVIDERS=""
+ELSEWHERE_IGNORE_PROVIDERS=""
+
+# --- Reverse proxy (optional, needs the nginx files under deploy/nginx/) ----
+
+# CORS proxy used by Spotlight/emby-ratings/emby-elsewhere for the Rotten
+# Tomatoes / AlloCiné scraping fallback and Elsewhere's deep links. The
+# addons append the full target URL to it, so keep the trailing slash.
+# Empty = feature off in the three addons.
+CORS_PROXY_URL=""
+#CORS_PROXY_URL="https://emby.example.com/cors-proxy/"
+
+# API proxy: routes the addons' TMDB/MDBList/Kinopoisk calls through nginx,
+# which adds the real API keys server-side and caches the answers for all
+# users. With this set, no third-party key is ever written into the JS.
+# Empty = direct calls from the browser with the keys embedded (upstream
+# behavior).
+API_PROXY_URL=""
+#API_PROXY_URL="https://emby.example.com/api-proxy/"
+
+# Only for the proxy smoke test run from the host where this script runs:
+# if that host cannot reach the public IP of the proxy's domain (NAT
+# without hairpin, typical on a NAS), give the LAN IP of the nginx host
+# and curl will connect there while keeping the domain's SNI/certificate.
+API_PROXY_RESOLVE_IP=""
+#API_PROXY_RESOLVE_IP="192.168.1.2"
+
+# --- Reviews.js --------------------------------------------------------------
+
+REVIEWS_PRIMARY_LANGUAGE="en-US"
+REVIEWS_SECONDARY_LANGUAGE="es-ES"
+REVIEWS_MAX_REVIEWS="30"
+REVIEWS_PREVIEW_LENGTH="600"
+REVIEWS_EXPANDED_BY_DEFAULT="false"
+REVIEWS_SHOW_LANGUAGE_FLAGS="true"
+
+# --- Spotlight.js (home screen spotlight) ------------------------------------
+
+SPOTLIGHT_LIMIT="10"
+SPOTLIGHT_AUTOPLAY_INTERVAL="10000"
+SPOTLIGHT_VIGNETTE_TOP="#1e1e1e"
+SPOTLIGHT_VIGNETTE_BOTTOM="#1e1e1e"
+SPOTLIGHT_VIGNETTE_LEFT="#1e1e1e"
+SPOTLIGHT_VIGNETTE_RIGHT="#1e1e1e"
+SPOTLIGHT_PLAYBUTTON_COLOR="hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
+SPOTLIGHT_CUSTOM_ITEMS_FILE="spotlight-items.txt"
+SPOTLIGHT_ENABLE_VIDEO_BACKDROP="true"
+SPOTLIGHT_START_MUTED="false"
+SPOTLIGHT_VIDEO_VOLUME="0.4"
+SPOTLIGHT_WAIT_FOR_TRAILER_TO_END="true"
+SPOTLIGHT_ENABLE_MOBILE_VIDEO="true"
+# hd720 | hd1080 | highres
+SPOTLIGHT_PREFERRED_VIDEO_QUALITY="hd720"
+SPOTLIGHT_ENABLE_SPONSOR_BLOCK="true"
+SPOTLIGHT_CACHE_TTL_HOURS="168"
+SPOTLIGHT_ENABLE_CUSTOM_RATINGS="true"
+SPOTLIGHT_ENABLE_IMDB="true"
+SPOTLIGHT_ENABLE_TMDB="true"
+SPOTLIGHT_ENABLE_ROTTEN_TOMATOES="true"
+SPOTLIGHT_ENABLE_METACRITIC="true"
+SPOTLIGHT_ENABLE_TRAKT="true"
+SPOTLIGHT_ENABLE_LETTERBOXD="true"
+SPOTLIGHT_ENABLE_ROGER_EBERT="true"
+SPOTLIGHT_ENABLE_ALLOCINE="true"
+SPOTLIGHT_ENABLE_KINOPOISK="true"
+SPOTLIGHT_ENABLE_MY_ANIME_LIST="true"
+SPOTLIGHT_ENABLE_ANI_LIST="true"
+
+# --- emby-ratings.js (rating badges) -----------------------------------------
+
+RATINGS_CACHE_TTL_HOURS="168"
+RATINGS_ENABLE_IMDB="true"
+RATINGS_ENABLE_TMDB="true"
+RATINGS_ENABLE_ROTTEN_TOMATOES="true"
+RATINGS_ENABLE_METACRITIC="true"
+RATINGS_ENABLE_TRAKT="true"
+RATINGS_ENABLE_LETTERBOXD="true"
+RATINGS_ENABLE_ROGER_EBERT="true"
+RATINGS_ENABLE_ALLOCINE="true"
+RATINGS_ENABLE_KINOPOISK="true"
+RATINGS_ENABLE_MY_ANIME_LIST="true"
+RATINGS_ENABLE_ANI_LIST="true"

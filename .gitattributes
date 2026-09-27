@@ -1,0 +1,14 @@
+# Always store shell scripts and text files with LF, regardless of what
+# line ending a contributor's OS/editor uses. Windows checkouts still show
+# the files fine in any modern editor; this only fixes what gets committed.
+*.sh    text eol=lf
+*.conf  text eol=lf
+*.example text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+.gitattributes text eol=lf
+.gitignore     text eol=lf
+.editorconfig  text eol=lf
+
+# Binary/opaque, never touched by line-ending conversion.
+*.zip binary

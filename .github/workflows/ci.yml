@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: bash -n, shellcheck, test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Syntax check
+        run: |
+          bash -n install-emby-custom.sh
+          for f in deploy/*.sh tests/run_tests.sh tests/unit/*.sh tests/integration/*.sh tests/lib/*.sh tests/stubs/*; do
+            bash -n "$f"
+          done
+
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          severity: warning
+          scandir: '.'
+          ignore_paths: docs backup
+
+      - name: Test suite
+        run: ./tests/run_tests.sh
+
+      - name: No deployment-specific data in tracked files
+        run: |
+          # Real hosts/keys must only ever live in gitignored files. Docs and
+          # examples use 192.168.1.x and emby.example.com; anything else that
+          # looks like a private address or a real Emby vhost fails the build.
+          if grep -rnP "192\.168\.(?!1\.)\d+\.\d+|\b10\.\d+\.\d+\.\d+\b|\b172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\b|emby\.(?!example\.(com|test)|media\b)[a-z0-9-]+\.[a-z.]+" \
+              --include='*.sh' --include='*.md' --include='*.conf' --include='*.example' --include='*.yml' . \
+              | grep -v '^./docs/investigations' ; then
+            echo "Deployment-specific values found in tracked files"; exit 1
+          fi
+          # No 32-hex tokens (Emby/TMDB key shape) outside test fixtures/stubs.
+          if grep -rnP "\b[0-9a-f]{32}\b" --include='*.sh' --include='*.md' --include='*.conf' --include='*.example' . \
+              | grep -vE '^./(docs/investigations|tests/)' | grep -vE '0{32}|sha256' ; then
+            echo "Key-shaped token found in tracked files"; exit 1
+          fi
