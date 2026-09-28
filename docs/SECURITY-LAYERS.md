@@ -119,6 +119,44 @@ exactly the inserted entry; full backup + rollback before anything is
 touched; config file parsed and validated, never sourced; secrets file
 ownership/permissions checked; concurrent runs excluded with `flock`.
 
+### 13. Access-log token redaction *(vhost's shared `nginx.conf` — not tracked in this repo)*
+Found 2026-09-28 while comparing an old (2015) open-source Samsung Smart TV
+Emby client against this deployment's real traffic, as a side project to
+understand the protocol better (not a scheduled audit): the old client sent
+the session token as the `X-MediaBrowser-Token` **header**; every current
+Emby client (Emby Web, Emby for Android, Emby for Samsung/Tizen) instead
+sends it as an `X-Emby-Token=<32-hex>` **URL query parameter**. The vhost
+already had a redaction map for the `api_key=` URL-parameter fallback
+(dated `BK-0359`), but its own comment explicitly assumed *"the header form
+(X-Emby-Token) is unaffected"* — true for the 2015 protocol, false for every
+client in use today. Result: **2,576 unredacted session tokens** in a single
+day's `emby_access.log` before the fix (confirmed by grep, not estimated).
+
+Fix: chained a second `map` onto the existing one (`$args` →
+`$args_apikey_safe` → `$args_safe`, feeding the same `$args_safe` both
+`log_format`s already used) that redacts `X-Emby-Token=<value>` the same
+way. Backed up (`nginx.conf.bak.<timestamp>`), syntax-tested
+(`nginx -t -c ... .new`) before swapping in, reloaded with zero downtime.
+Verified against **real production traffic** (the household's Samsung TV,
+mid-playback) rather than a synthetic request: `X-Emby-Token=REDACTED` and
+`api_key=REDACTED` both confirmed in the live log immediately after reload,
+zero raw tokens logged since. Stops: session tokens sitting in plaintext,
+readable by anything with read access to the log file (backups, a
+log-shipper, another service on the same host), for as long as the log
+retention window (weeks to months here).
+
+**Known gaps, left as-is on purpose:**
+- Logs written *before* the fix (rotated `.gz` files going back to August,
+  plus that day's own log before the reload) still hold real tokens in
+  plaintext. Purging/rotating them is a retention decision for whoever owns
+  that host, not something this project's tooling did unilaterally.
+- `nginx.conf` on the shared nginx host is **not part of this project** —
+  it belongs to a separate, Ansible-managed infrastructure project. The fix
+  is live on the host but will be overwritten by that project's next
+  provisioning run unless it is also ported into that project's own
+  template. Documented here because the *finding* came from this project's
+  investigation and affects this deployment either way.
+
 ---
 
 ## Español
@@ -241,3 +279,45 @@ del original de Emby exactamente en la entrada insertada; backup completo +
 rollback antes de tocar nada; archivo de configuración parseado y validado,
 nunca "sourceado"; dueño/permisos del archivo de secretos verificados;
 corridas concurrentes excluidas con `flock`.
+
+### 13. Enmascarado de tokens en el log de acceso *(nginx.conf compartido del vhost — no versionado en este repo)*
+Encontrado el 2026-09-28 al comparar un cliente viejo (2015), open source, de
+Emby para Samsung Smart TV contra el tráfico real de este despliegue, como
+proyecto paralelo para entender mejor el protocolo (no una auditoría
+agendada): el cliente viejo mandaba el token de sesión por el **header**
+`X-MediaBrowser-Token`; todo cliente actual de Emby (Emby Web, Emby for
+Android, Emby for Samsung/Tizen) lo manda en cambio como **parámetro de URL**
+`X-Emby-Token=<32-hex>`. El vhost ya tenía un `map` de enmascarado para el
+fallback por URL `api_key=` (con fecha `BK-0359`), pero su propio comentario
+asumía explícitamente *"the header form (X-Emby-Token) is unaffected"*
+—cierto para el protocolo de 2015, falso para cualquier cliente de hoy.
+Resultado: **2.576 tokens de sesión sin enmascarar** en un solo día de
+`emby_access.log` antes del fix (confirmado con grep, no estimado).
+
+Arreglo: se encadenó un segundo `map` sobre el existente (`$args` →
+`$args_apikey_safe` → `$args_safe`, alimentando la misma `$args_safe` que ya
+usaban ambos `log_format`) que enmascara `X-Emby-Token=<valor>` de la misma
+forma. Con backup (`nginx.conf.bak.<timestamp>`), probado de sintaxis
+(`nginx -t -c ... .new`) antes de reemplazar, recargado sin caída de
+servicio. Verificado contra **tráfico real de producción** (la Smart TV
+Samsung de la casa, reproduciendo algo en ese momento) en vez de un pedido
+sintético: `X-Emby-Token=REDACTED` y `api_key=REDACTED` confirmados en el log
+en vivo apenas después del reload, cero tokens crudos registrados desde
+entonces. Frena: tokens de sesión quedando en texto plano, legibles por
+cualquier cosa con acceso de lectura al archivo de log (backups, un
+log-shipper, otro servicio en el mismo host), durante toda la ventana de
+retención (semanas a meses en este host).
+
+**Huecos conocidos, dejados a propósito:**
+- Los logs escritos *antes* del fix (los `.gz` rotados desde agosto, más lo
+  que ese mismo día ya había quedado escrito antes del reload) siguen con
+  tokens reales en texto plano. Purgar/rotar esos archivos es una decisión
+  de retención de quien administra ese host, no algo que la herramienta de
+  este proyecto hizo por su cuenta.
+- El `nginx.conf` del host de nginx compartido **no es parte de este
+  proyecto** — pertenece a un proyecto de infraestructura separado,
+  gestionado con Ansible. El arreglo quedó en vivo en el host, pero la
+  próxima corrida de aprovisionamiento de ese otro proyecto lo va a pisar
+  salvo que también se porte a su propio template. Se documenta acá porque
+  el *hallazgo* salió de la investigación de este proyecto y afecta a este
+  despliegue de cualquier manera.

@@ -33,6 +33,17 @@ with `./install-emby-custom.sh --version`.
   addresses outside the documented `192.168.1.x` examples, on any
   `emby.<domain>` other than `emby.example.com`, and on 32-hex tokens.
 
+#### Security
+- Found (by comparing a decade-old open-source Emby-for-Samsung client
+  against this deployment's real traffic) and fixed, on the shared nginx
+  host, an access-log redaction gap: modern Emby clients send the session
+  token as an `X-Emby-Token=` URL parameter, not only as a header, so it
+  was being logged in plaintext — 2,576 occurrences in a single day's log
+  before the fix. This lives in the shared vhost's `nginx.conf`, outside
+  this project's tracked `deploy/nginx/` files; see
+  [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md#13-access-log-token-redaction-vhosts-shared-nginxconf--not-tracked-in-this-repo)
+  for the full finding, fix, and validation.
+
 #### Fixed
 - Post-install verification compared Reviews.js against the literals
   `es-AR` / `30` instead of `REVIEWS_PRIMARY_LANGUAGE` / `REVIEWS_MAX_REVIEWS`.
@@ -110,6 +121,18 @@ script informa su versión con `./install-emby-custom.sh --version`.
 - El guard de CI ya no hardcodea ningún valor del despliegue: falla ante
   direcciones privadas fuera de los ejemplos `192.168.1.x`, ante cualquier
   `emby.<dominio>` que no sea `emby.example.com` y ante tokens de 32 hex.
+
+#### Seguridad
+- Encontrado (comparando un cliente open source de Emby para Samsung de hace
+  una década contra el tráfico real de este despliegue) y corregido, en el
+  host de nginx compartido, un hueco en el enmascarado del log de acceso:
+  los clientes modernos de Emby mandan el token de sesión como parámetro de
+  URL `X-Emby-Token=`, no solo por header, así que quedaba en texto plano —
+  2.576 apariciones en un solo día de log antes del fix. Vive en el
+  `nginx.conf` del vhost compartido, fuera de los archivos versionados de
+  `deploy/nginx/` de este proyecto; ver
+  [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md#13-enmascarado-de-tokens-en-el-log-de-acceso-nginxconf-compartido-del-vhost--no-versionado-en-este-repo)
+  para el hallazgo completo, el arreglo y la validación.
 
 #### Corregido
 - La verificación post-instalación comparaba Reviews.js contra los
