@@ -126,8 +126,8 @@ understand the protocol better (not a scheduled audit): the old client sent
 the session token as the `X-MediaBrowser-Token` **header**; every current
 Emby client (Emby Web, Emby for Android, Emby for Samsung/Tizen) instead
 sends it as an `X-Emby-Token=<32-hex>` **URL query parameter**. The vhost
-already had a redaction map for the `api_key=` URL-parameter fallback
-(dated `BK-0359`), but its own comment explicitly assumed *"the header form
+already had a redaction map for the `api_key=` URL-parameter fallback,
+but its own comment explicitly assumed *"the header form
 (X-Emby-Token) is unaffected"* — true for the 2015 protocol, false for every
 client in use today. Result: **2,576 unredacted session tokens** in a single
 day's `emby_access.log` before the fix (confirmed by grep, not estimated).
@@ -288,7 +288,7 @@ agendada): el cliente viejo mandaba el token de sesión por el **header**
 `X-MediaBrowser-Token`; todo cliente actual de Emby (Emby Web, Emby for
 Android, Emby for Samsung/Tizen) lo manda en cambio como **parámetro de URL**
 `X-Emby-Token=<32-hex>`. El vhost ya tenía un `map` de enmascarado para el
-fallback por URL `api_key=` (con fecha `BK-0359`), pero su propio comentario
+fallback por URL `api_key=`, pero su propio comentario
 asumía explícitamente *"the header form (X-Emby-Token) is unaffected"*
 —cierto para el protocolo de 2015, falso para cualquier cliente de hoy.
 Resultado: **2.576 tokens de sesión sin enmascarar** en un solo día de
