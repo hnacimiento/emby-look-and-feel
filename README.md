@@ -29,7 +29,7 @@ Instalador automatizado de un conjunto de addons comunitarios de Emby — [Embym
 - [Known limitations](#known-limitations)
 - [Tests](#tests) · [Contributing](#contributing) · [License](#license)
 
-Related documents: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (design rationale), [SECURITY.md](SECURITY.md) and [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md) (security, layer by layer), [deploy/README.md](deploy/README.md) (SSH helpers and nginx files), [tests/README.md](tests/README.md), [CHANGELOG.md](CHANGELOG.md).
+Related documents: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (design rationale), [SECURITY.md](SECURITY.md) and [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md) (security, layer by layer), [docs/EMBY-API.md](docs/EMBY-API.md) (the Emby API as the add-ons use it), [deploy/README.md](deploy/README.md) (SSH helpers and nginx files), [tests/README.md](tests/README.md), [CHANGELOG.md](CHANGELOG.md).
 
 ## Why this exists
 
@@ -355,7 +355,7 @@ All credit for the actual features goes to [v1rusnl](https://github.com/v1rusnl)
 - [Limitaciones conocidas](#limitaciones-conocidas)
 - [Tests](#tests-1) · [Contribuir](#contribuir) · [Licencia](#licencia)
 
-Documentos relacionados: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (razones de diseño), [SECURITY.md](SECURITY.md) y [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md) (seguridad, capa por capa), [deploy/README.md](deploy/README.md) (helpers SSH y archivos de nginx), [tests/README.md](tests/README.md), [CHANGELOG.md](CHANGELOG.md).
+Documentos relacionados: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (razones de diseño), [SECURITY.md](SECURITY.md) y [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md) (seguridad, capa por capa), [docs/EMBY-API.md](docs/EMBY-API.md) (la API de Emby como la usan los add-ons), [deploy/README.md](deploy/README.md) (helpers SSH y archivos de nginx), [tests/README.md](tests/README.md), [CHANGELOG.md](CHANGELOG.md).
 
 ## Por qué existe
 
