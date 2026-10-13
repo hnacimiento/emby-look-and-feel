@@ -13,6 +13,21 @@ with `./install-emby-custom.sh --version`.
 
 ### [Unreleased]
 
+### [1.3.0] - 2026-10-13
+
+#### Added
+- Watchdog `--installer PATH`: when the customizations are gone and Emby's
+  version changed since the last install (an app update), it runs a full
+  `install-emby-custom.sh --silent` instead of only logging that a reinstall
+  is needed; with the same version it keeps using reapply.
+- The installer's final summary shows how to download and schedule the
+  watchdog, with this host's paths.
+
+#### Changed
+- README reorganized around what the user gets: product title, "What you
+  get", "Quick start" and "After an Emby update" sections, and screenshots
+  (before/after GIF, the Theme selector, a title page with the addons).
+
 ### [1.2.0] - 2026-10-13
 
 Tested against Emby 4.10.1.0 (upstream: Embymalism CSS 4.10.1.0 and the
@@ -195,6 +210,23 @@ versiones siguen [Versionado Semántico](https://semver.org/lang/es/). El
 script informa su versión con `./install-emby-custom.sh --version`.
 
 ### [Sin publicar]
+
+### [1.3.0] - 2026-10-13
+
+#### Agregado
+- Watchdog `--installer RUTA`: cuando las personalizaciones desaparecieron y
+  la versión de Emby cambió desde la última instalación (una actualización de
+  la app), corre una instalación completa `install-emby-custom.sh --silent`
+  en lugar de solo registrar que hace falta reinstalar; con la misma versión
+  sigue usando reapply.
+- El resumen final del instalador muestra cómo bajar y programar el watchdog,
+  con las rutas de este host.
+
+#### Cambiado
+- README reorganizado alrededor de lo que obtiene el usuario: título de
+  producto, secciones "Qué obtenés", "Inicio rápido" y "Después de actualizar
+  Emby", y capturas (GIF antes/después, el selector de Theme, una ficha con
+  los addons).
 
 ### [1.2.0] - 2026-10-13
 

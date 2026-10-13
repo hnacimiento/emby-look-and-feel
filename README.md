@@ -1,15 +1,20 @@
-# install-emby-custom.sh
+# Emby Look & Feel
 
 **[English](#english) · [Español](#español)**
 
-Automated installer for a set of community Emby addons — [Embymalism](https://github.com/v1rusnl/Embymalism), [EmbySpotlight](https://github.com/v1rusnl/EmbySpotlight), [EmbyReviews](https://github.com/v1rusnl/EmbyReviews) — plus the Embymalism theme, for **Emby running in Docker on TrueNAS SCALE**. Backup, rollback, byte-for-byte verification, no secrets in the browser, and an optional nginx layer that caches the ratings APIs for every user.
+A modern look and richer title pages for **Emby running in Docker on TrueNAS SCALE**, installed and kept installed by one script: the [Embymalism](https://github.com/v1rusnl/Embymalism) theme plus the community addons from [Embymalism](https://github.com/v1rusnl/Embymalism), [EmbySpotlight](https://github.com/v1rusnl/EmbySpotlight) and [EmbyReviews](https://github.com/v1rusnl/EmbyReviews) — ratings, Oscar/Emmy awards, reviews, where to watch, a home Spotlight — with backup, rollback and an optional nginx layer that keeps API keys out of the browser.
 
-Instalador automatizado de un conjunto de addons comunitarios de Emby — [Embymalism](https://github.com/v1rusnl/Embymalism), [EmbySpotlight](https://github.com/v1rusnl/EmbySpotlight), [EmbyReviews](https://github.com/v1rusnl/EmbyReviews) — más el tema Embymalism, para **Emby corriendo en Docker sobre TrueNAS SCALE**. Backup, rollback, verificación byte a byte, sin secretos en el navegador, y una capa nginx opcional que cachea las APIs de ratings para todos los usuarios.
+Un look moderno y fichas más completas para **Emby en Docker sobre TrueNAS SCALE**, instalados y mantenidos por un solo script: el tema [Embymalism](https://github.com/v1rusnl/Embymalism) más los addons comunitarios de [Embymalism](https://github.com/v1rusnl/Embymalism), [EmbySpotlight](https://github.com/v1rusnl/EmbySpotlight) y [EmbyReviews](https://github.com/v1rusnl/EmbyReviews) — ratings, premios Oscar/Emmy, reseñas, dónde verlo, un Spotlight en el inicio — con backup, rollback y una capa nginx opcional que mantiene las API keys fuera del navegador.
+
+![Same Emby title page: stock Dark theme, then Embymalism with the addons](docs/media/theme-before-after.gif)
+
+<sub>*Sintel* © Blender Foundation | [durian.blender.org](https://durian.blender.org/), [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/).</sub>
 
 ---
 
 # English
 
+- [What you get](#what-you-get) · [Quick start](#quick-start) · [After an Emby update](#after-an-emby-update)
 - [Why this exists](#why-this-exists)
 - [Before you run this](#before-you-run-this)
 - [What it installs](#what-it-installs)
@@ -31,9 +36,40 @@ Instalador automatizado de un conjunto de addons comunitarios de Emby — [Embym
 
 Related documents: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (design rationale), [SECURITY.md](SECURITY.md) and [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md) (security, layer by layer), [docs/EMBY-API.md](docs/EMBY-API.md) (the Emby API as the add-ons use it), [deploy/README.md](deploy/README.md) (SSH helpers and nginx files), [tests/README.md](tests/README.md), [CHANGELOG.md](CHANGELOG.md).
 
+## What you get
+
+- **Embymalism as a real theme.** It shows up in Emby's own **Theme** selector next to Dark and Blue Radiance, and becomes the default for everyone (a default theme needs no Emby Premiere). The admin pages keep their own *Settings theme*, so they stay readable — installed the usual way, as Branding custom CSS, Embymalism turns them into black text on a black background. See [Embymalism as a Theme entry](#embymalism-as-a-theme-entry-settings-theme-untouched).
+- **Richer title pages**, configured and ready: IMDb, Rotten Tomatoes, Metacritic, Trakt, Letterboxd and more ratings; Oscar/Emmy wins; TMDB reviews in your language; where to watch in your country (with a UI in English or Spanish instead of upstream's German); a Spotlight carousel on the home screen.
+- **It survives Emby updates.** An app update recreates the container and wipes all of this; the [watchdog](#after-an-emby-update) puts it back on its own, and the installer picks the stylesheet made for *your* Emby version.
+- **No API keys in the browser, shared ratings cache** (optional nginx layer): keys stay server-side and every rating is fetched once for all users and devices.
+- **Safe to run and to undo**: dry run, backup before every change, byte-for-byte verification, one-command rollback.
+
+## Quick start
+
+1. On the TrueNAS host, download the script somewhere persistent and run it (it asks only for what it cannot detect, and your Emby and TMDB API keys on the first run):
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/hnacimiento/emby-look-and-feel/main/install-emby-custom.sh \
+     -o install-emby-custom.sh && chmod +x install-emby-custom.sh && ./install-emby-custom.sh
+   ```
+2. Open Emby in the browser and reload with **Ctrl+Shift+R**.
+3. Optional: put your values (region, languages, proxies) in a [configuration file](#configuration-file), and schedule the [watchdog](#after-an-emby-update).
+
+Try it first without touching anything: `./install-emby-custom.sh --dry-run`.
+
+## After an Emby update
+
+Updating the Emby app (or changing its container settings) recreates the container, which brings back Emby's stock files: the theme and the addons disappear. Either re-run `./install-emby-custom.sh`, or let the watchdog do it — schedule it every 15 minutes (TrueNAS: System Settings → Advanced → Cron Jobs; the installer prints this line at the end with your paths):
+
+```bash
+/mnt/toolbox/scripts/emby-reapply-watchdog.sh --container ix-emby-emby-1 \
+    --custom /mnt/toolbox/configs/emby/custom --installer /mnt/toolbox/scripts/install-emby-custom.sh
+```
+
+It reapplies what is already staged when Emby's version is the same, and re-runs the installer when it changed. Then reload the browser with Ctrl+Shift+R (and, with the nginx layer, run `deploy/nginx/purge-assets.sh`).
+
 ## Why this exists
 
-Emby's own custom-CSS setting (*Settings → Branding*) is awkward to use when Emby runs inside a Docker container on TrueNAS SCALE, and the community addons that give Emby a modern look and richer metadata (Embymalism, EmbySpotlight, EmbyReviews) all require hand-editing files inside the container. This script makes them installable on that exact platform with the discipline you want for anything that mutates a media server you use daily: a backup before every mutation, a verified rollback path, no secrets in logs or process listings, safe re-runs, and an honest account of what is still a known gap. It also translates `emby-elsewhere.js`'s German UI into Spanish, phrase by phrase.
+The community addons that give Emby a modern look and richer metadata (Embymalism, EmbySpotlight, EmbyReviews) all require hand-editing files inside the container, Embymalism's own install path (Branding custom CSS) breaks the admin pages, and every Emby update undoes the work. This script makes them installable on Emby in Docker on TrueNAS SCALE with the discipline you want for anything that mutates a media server you use daily: a backup before every mutation, a verified rollback path, no secrets in logs or process listings, safe re-runs, and an honest account of what is still a known gap. It also translates `emby-elsewhere.js`'s German UI into English or Spanish, phrase by phrase.
 
 It runs on a single home Emby setup — Docker on TrueNAS SCALE — and is shared as-is, including the parts of [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) that describe real bugs found and fixed during development.
 
@@ -220,11 +256,7 @@ Both read `secrets/api.env` at run time (the key is never embedded). `rollback-<
 
 **After an Emby upgrade, re-run the installer, not reapply.** The staged `index.html` and `skinmanager.js` are the old Emby version's files plus our additions; copying them over a newer Emby would replace its own files. `reapply` therefore refuses (exit `1`, nothing touched) when Emby's version differs from the one recorded at install time; `--force` overrides it if you know what you are doing. `--status` flags the same case.
 
-**Watchdog:** [deploy/emby-reapply-watchdog.sh](deploy/emby-reapply-watchdog.sh) checks, from cron on the Emby host, that the addons, the `index.html` tags and the theme entry are still in the container and runs the newest `reapply` when a container recreation wiped them; if Emby's version changed, it logs that the installer must be re-run instead (TrueNAS: System Settings → Advanced → Cron Jobs, e.g. every 15 minutes):
-
-```bash
-/mnt/toolbox/scripts/emby-reapply-watchdog.sh --container ix-emby-emby-1 --custom /mnt/toolbox/configs/emby/custom
-```
+**Watchdog:** [deploy/emby-reapply-watchdog.sh](deploy/emby-reapply-watchdog.sh) checks, from cron on the Emby host, that the addons, the `index.html` tags and the theme entry are still in the container. When a container recreation wiped them it runs the newest `reapply`; if Emby's version changed it runs the installer (`--installer`, a full `--silent` install that rebuilds everything for the new version), or without `--installer` only logs that a reinstall is needed. Scheduling: see [After an Emby update](#after-an-emby-update); `--dry-run` only reports.
 
 ## Exit codes
 
@@ -290,7 +322,13 @@ If Emby changes `modules/skinmanager.js` so the theme anchor is not found, the s
 
 ## Addon details
 
+![A title page with the addons: ratings, Oscar wins, where to watch, reviews](docs/media/item-tour.gif)
+
+<sub>*Wings* (1927), public domain in the US.</sub>
+
 ### Embymalism as a Theme entry (Settings theme untouched)
+
+![Emby's Display settings: Theme = Embymalism, Settings theme = Light](docs/media/theme-selector.png)
 
 Emby's web client runs **two themes at once**: the main theme and a separate **Settings theme** for its 50 admin/settings routes (`#!/dashboard`, `#!/users`, `#!/settings/*.html`, ...), which defaults to *Light*. Embymalism upstream expects both to be Dark and is installed as Branding `CustomCss`, which Emby loads globally — so admin pages end up with Light's black text on a forced black background. Instead, the script registers Embymalism as **one more entry in the Theme selector**, like Emby's own "Blue Radiance" or "Superman": `Embymalism.css` goes to `modules/themes/embymalism/theme.css`, one object is inserted into the hardcoded `AllThemes` array of `modules/skinmanager.js` right before the `Light` entry (Dark's stylesheets + ours last, `skipForSettingsthemes` so it never shows in the Settings-theme selector), and Branding `CustomCss` is emptied. The install verifies that stripping the entry gives back Emby's original file byte-for-byte.
 
@@ -357,6 +395,7 @@ All credit for the actual features goes to [v1rusnl](https://github.com/v1rusnl)
 
 # Español
 
+- [Qué obtenés](#qué-obtenés) · [Inicio rápido](#inicio-rápido) · [Después de actualizar Emby](#después-de-actualizar-emby)
 - [Por qué existe](#por-qué-existe)
 - [Antes de correrlo](#antes-de-correrlo)
 - [Qué instala](#qué-instala)
@@ -378,9 +417,40 @@ All credit for the actual features goes to [v1rusnl](https://github.com/v1rusnl)
 
 Documentos relacionados: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (razones de diseño), [SECURITY.md](SECURITY.md) y [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md) (seguridad, capa por capa), [docs/EMBY-API.md](docs/EMBY-API.md) (la API de Emby como la usan los add-ons), [deploy/README.md](deploy/README.md) (helpers SSH y archivos de nginx), [tests/README.md](tests/README.md), [CHANGELOG.md](CHANGELOG.md).
 
+## Qué obtenés
+
+- **Embymalism como tema de verdad.** Aparece en el propio combo **Theme** de Emby, junto a Dark y Blue Radiance, y queda como tema por defecto para todos (un tema por defecto no requiere Emby Premiere). Las páginas de administración conservan su propio *Settings theme* y siguen legibles — instalado de la forma habitual, como CSS personalizado de Branding, Embymalism las deja con texto negro sobre fondo negro. Ver [Embymalism como entrada de Theme](#embymalism-como-entrada-del-combo-theme-settings-theme-intacto).
+- **Fichas más completas**, configuradas y listas: ratings de IMDb, Rotten Tomatoes, Metacritic, Trakt, Letterboxd y más; Oscars/Emmys ganados; reseñas de TMDB en tu idioma; dónde verlo en tu país (con la interfaz en español o inglés en lugar del alemán de upstream); un carrusel Spotlight en el inicio.
+- **Sobrevive a las actualizaciones de Emby.** Una actualización de la app recrea el container y borra todo esto; el [watchdog](#después-de-actualizar-emby) lo vuelve a poner solo, y el instalador elige la hoja de estilos hecha para *tu* versión de Emby.
+- **Sin API keys en el navegador y con caché compartida de ratings** (capa nginx opcional): las keys quedan del lado servidor y cada rating se pide una sola vez para todos los usuarios y dispositivos.
+- **Seguro de correr y de deshacer**: modo de prueba, backup antes de cada cambio, verificación byte a byte, rollback con un comando.
+
+## Inicio rápido
+
+1. En el host TrueNAS, bajá el script a un lugar persistente y corrélo (pregunta solo lo que no puede detectar, y tus API keys de Emby y TMDB la primera vez):
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/hnacimiento/emby-look-and-feel/main/install-emby-custom.sh \
+     -o install-emby-custom.sh && chmod +x install-emby-custom.sh && ./install-emby-custom.sh
+   ```
+2. Abrí Emby en el navegador y recargá con **Ctrl+Shift+R**.
+3. Opcional: poné tus valores (región, idiomas, proxies) en un [archivo de configuración](#archivo-de-configuración) y programá el [watchdog](#después-de-actualizar-emby).
+
+Para probar sin tocar nada: `./install-emby-custom.sh --dry-run`.
+
+## Después de actualizar Emby
+
+Actualizar la app de Emby (o cambiar la configuración de su container) recrea el container, que vuelve a los archivos de fábrica de Emby: el tema y los addons desaparecen. Volvé a correr `./install-emby-custom.sh`, o dejá que lo haga el watchdog — programalo cada 15 minutos (TrueNAS: System Settings → Advanced → Cron Jobs; el instalador imprime esta línea al final con tus rutas):
+
+```bash
+/mnt/toolbox/scripts/emby-reapply-watchdog.sh --container ix-emby-emby-1 \
+    --custom /mnt/toolbox/configs/emby/custom --installer /mnt/toolbox/scripts/install-emby-custom.sh
+```
+
+Si la versión de Emby es la misma, re-aplica lo ya preparado; si cambió, vuelve a correr el instalador. Después recargá el navegador con Ctrl+Shift+R (y, con la capa nginx, corré `deploy/nginx/purge-assets.sh`).
+
 ## Por qué existe
 
-El ajuste de CSS personalizado de Emby (*Settings → Branding*) es incómodo cuando Emby corre en un container Docker sobre TrueNAS SCALE, y los addons comunitarios que le dan a Emby una apariencia moderna y más metadatos (Embymalism, EmbySpotlight, EmbyReviews) exigen editar archivos a mano dentro del container. Este script los hace instalables en esa plataforma exacta con la disciplina que querés para cualquier cosa que muta un servidor de medios que usás a diario: backup antes de cada mutación, rollback verificado, sin secretos en logs ni en listados de procesos, re-ejecuciones seguras y una lista honesta de lo que sigue siendo un hueco conocido. Además traduce al español, frase por frase, la interfaz en alemán de `emby-elsewhere.js`.
+Los addons comunitarios que le dan a Emby una apariencia moderna y más metadatos (Embymalism, EmbySpotlight, EmbyReviews) exigen editar archivos a mano dentro del container, la forma de instalación propia de Embymalism (CSS personalizado de Branding) rompe las páginas de administración, y cada actualización de Emby deshace el trabajo. Este script los hace instalables en Emby en Docker sobre TrueNAS SCALE con la disciplina que querés para cualquier cosa que muta un servidor de medios que usás a diario: backup antes de cada mutación, rollback verificado, sin secretos en logs ni en listados de procesos, re-ejecuciones seguras y una lista honesta de lo que sigue siendo un hueco conocido. Además traduce al español o al inglés, frase por frase, la interfaz en alemán de `emby-elsewhere.js`.
 
 Corre sobre una única instalación doméstica de Emby — Docker sobre TrueNAS SCALE — y se comparte tal cual, incluidas las partes de [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) que describen bugs reales encontrados y corregidos durante el desarrollo.
 
@@ -567,11 +637,7 @@ Ambos leen `secrets/api.env` al ejecutarse (la key nunca se embebe). `rollback-<
 
 **Después de actualizar Emby, volvé a correr el instalador, no reapply.** El `index.html` y el `skinmanager.js` preparados son los archivos de la versión vieja de Emby más nuestros agregados; copiarlos sobre un Emby más nuevo reemplazaría sus propios archivos. Por eso `reapply` se niega (exit `1`, sin tocar nada) cuando la versión de Emby difiere de la registrada al instalar; `--force` lo fuerza si sabés lo que hacés. `--status` marca el mismo caso.
 
-**Watchdog:** [deploy/emby-reapply-watchdog.sh](deploy/emby-reapply-watchdog.sh) comprueba, desde cron en el host de Emby, que los addons, los tags de `index.html` y la entrada del tema siguen en el container, y corre el `reapply` más reciente cuando una recreación del container los borró; si cambió la versión de Emby, deja registrado que hay que volver a correr el instalador (TrueNAS: System Settings → Advanced → Cron Jobs, p. ej. cada 15 minutos):
-
-```bash
-/mnt/toolbox/scripts/emby-reapply-watchdog.sh --container ix-emby-emby-1 --custom /mnt/toolbox/configs/emby/custom
-```
+**Watchdog:** [deploy/emby-reapply-watchdog.sh](deploy/emby-reapply-watchdog.sh) comprueba, desde cron en el host de Emby, que los addons, los tags de `index.html` y la entrada del tema siguen en el container. Cuando una recreación del container los borró corre el `reapply` más reciente; si cambió la versión de Emby corre el instalador (`--installer`, una instalación completa `--silent` que reconstruye todo para la versión nueva), o sin `--installer` solo deja registrado que hace falta reinstalar. Programación: ver [Después de actualizar Emby](#después-de-actualizar-emby); `--dry-run` solo informa.
 
 ## Códigos de salida
 
@@ -637,7 +703,13 @@ Si Emby cambia `modules/skinmanager.js` y el ancla del tema no aparece, el scrip
 
 ## Detalle por addon
 
+![Una ficha con los addons: ratings, Oscars ganados, dónde verlo, reseñas](docs/media/item-tour.gif)
+
+<sub>*Alas / Wings* (1927), de dominio público en EE. UU.</sub>
+
 ### Embymalism como entrada del combo Theme (Settings theme intacto)
+
+![Ajustes de Display de Emby: Theme = Embymalism, Settings theme = Light](docs/media/theme-selector.png)
 
 La web de Emby corre **dos temas a la vez**: el principal y un **Settings theme** aparte para sus 50 rutas de administración/configuración (`#!/dashboard`, `#!/users`, `#!/settings/*.html`, ...), que por defecto es *Light*. Embymalism upstream espera ambos en Dark y se instala como `CustomCss` de Branding, que Emby carga globalmente — así que las páginas de administración terminan con el texto negro de Light sobre un fondo negro forzado. En su lugar, el script registra Embymalism como **una entrada más del combo Theme**, como los propios "Blue Radiance" o "Superman" de Emby: `Embymalism.css` va a `modules/themes/embymalism/theme.css`, se inserta un objeto en el array hardcodeado `AllThemes` de `modules/skinmanager.js` justo antes de la entrada `Light` (las hojas de Dark + la nuestra al final, `skipForSettingsthemes` para que no aparezca en el combo de Settings theme), y el `CustomCss` de Branding se vacía. La instalación verifica que quitando la entrada se obtiene el archivo original de Emby byte a byte.
 

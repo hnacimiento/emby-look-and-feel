@@ -27,7 +27,7 @@ cp deploy/truenas.env.example deploy/truenas.env      # fill in host, port, user
 
 Both use `StrictHostKeyChecking=accept-new`: a new host is accepted on first contact, a *changed* host key aborts.
 
-`emby-reapply-watchdog.sh` runs on the Emby host from cron: it checks the addons, the `index.html` tags and the theme entry are still in the container and runs the newest `reapply-<timestamp>.sh` when a container recreation wiped them; if Emby's version changed it does not reapply and logs that the installer must be re-run (`--dry-run` only reports). See the README, "Rollback, reapply, watchdog".
+`emby-reapply-watchdog.sh` runs on the Emby host from cron: it checks the addons, the `index.html` tags and the theme entry are still in the container and runs the newest `reapply-<timestamp>.sh` when a container recreation wiped them; if Emby's version changed it re-runs the installer (`--installer /path/to/install-emby-custom.sh`), or without that flag logs that a reinstall is needed (`--dry-run` only reports). See the README, "Rollback, reapply, watchdog".
 
 ## nginx
 
@@ -100,7 +100,7 @@ cp deploy/truenas.env.example deploy/truenas.env      # completá host, puerto, 
 
 Ambos usan `StrictHostKeyChecking=accept-new`: un host nuevo se acepta en el primer contacto; una clave de host *cambiada* corta.
 
-`emby-reapply-watchdog.sh` corre en el host de Emby desde cron: comprueba que los addons, los tags de `index.html` y la entrada del tema siguen en el container y ejecuta el `reapply-<timestamp>.sh` más reciente cuando una recreación del container los borró; si cambió la versión de Emby no hace reapply y deja registrado que hay que volver a correr el instalador (`--dry-run` solo informa). Ver el README, "Rollback, reapply, watchdog".
+`emby-reapply-watchdog.sh` corre en el host de Emby desde cron: comprueba que los addons, los tags de `index.html` y la entrada del tema siguen en el container y ejecuta el `reapply-<timestamp>.sh` más reciente cuando una recreación del container los borró; si cambió la versión de Emby vuelve a correr el instalador (`--installer /ruta/a/install-emby-custom.sh`), o sin esa opción deja registrado que hace falta reinstalar (`--dry-run` solo informa). Ver el README, "Rollback, reapply, watchdog".
 
 ## nginx
 

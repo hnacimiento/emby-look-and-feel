@@ -113,7 +113,7 @@ DRY_RUN=0
 UNINSTALL=0
 STATUS_ONLY=0
 CHECK_UPDATES=0
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.3.0"
 
 for arg in "$@"; do
     case "$arg" in
@@ -4556,6 +4556,14 @@ echo
 echo "If something does not look right:"
 echo "  Rollback:  bash '$ROLLBACK_FILE'"
 echo "  Reapply:   bash '$REAPPLY_FILE'"
+echo
+echo "Keep it installed after Emby updates (optional, recommended):"
+echo "  An Emby app update recreates the container and removes all of this."
+echo "  Schedule the watchdog (e.g. every 15 min; on TrueNAS: System Settings ->"
+echo "  Advanced -> Cron Jobs). It reapplies, or re-runs this installer when"
+echo "  Emby's version changed:"
+echo "    curl -fsSL https://raw.githubusercontent.com/hnacimiento/emby-look-and-feel/main/deploy/emby-reapply-watchdog.sh -o '$SCRIPT_DIR/emby-reapply-watchdog.sh' && chmod +x '$SCRIPT_DIR/emby-reapply-watchdog.sh'"
+echo "    '$SCRIPT_DIR/emby-reapply-watchdog.sh' --container '$CONTAINER' --custom '$CUSTOM_ROOT' --installer '$SCRIPT_DIR/$(basename "$0")'"
 echo
 
 section "NOTES"
