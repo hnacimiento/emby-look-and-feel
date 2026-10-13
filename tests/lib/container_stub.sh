@@ -92,6 +92,10 @@ generate_rollback_script() {
         DASHBOARD_CONTAINER_DIR="$scratch/container/system/dashboard-ui"
         SKINMANAGER_CONTAINER_PATH="$scratch/container/system/dashboard-ui/modules/skinmanager.js"
         THEME_CSS_CONTAINER_PATH="$scratch/container/system/dashboard-ui/modules/themes/embymalism/theme.css"
+        SPOTLIGHT_ITEMS_NAME="spotlight-items.txt"
+        SPOTLIGHT_ITEMS_CONTAINER_PATH="$scratch/container/system/dashboard-ui/spotlight-items.txt"
+        RATINGS_DATA_NAME="ratings-data.json"
+        RATINGS_DATA_CONTAINER_PATH="$scratch/container/system/dashboard-ui/ratings-data.json"
         BACKUP_DIR="$scratch/backup"
         BACKUP_TGZ="$scratch/emby-backup-test.tgz"
         SECRETS_FILE="$scratch/secrets.env"
@@ -137,7 +141,14 @@ generate_reapply_script() {
         THEME_CSS_REL="modules/themes/embymalism/theme.css"
         SKINMANAGER_CONTAINER_PATH="$scratch/container/system/dashboard-ui/modules/skinmanager.js"
         THEME_CSS_CONTAINER_PATH="$scratch/container/system/dashboard-ui/modules/themes/embymalism/theme.css"
+        SPOTLIGHT_ITEMS_NAME="spotlight-items.txt"
+        SPOTLIGHT_ITEMS_CONTAINER_PATH="$scratch/container/system/dashboard-ui/spotlight-items.txt"
+        RATINGS_DATA_NAME="ratings-data.json"
+        RATINGS_DATA_CONTAINER_PATH="$scratch/container/system/dashboard-ui/ratings-data.json"
         TESTED_EMBY_VERSION="4.9.5.0"
+        # Emby version recorded at install time; the reapply tests that need a
+        # mismatch make the curl stub answer another Version.
+        EMBY_SERVER_VERSION="${INSTALLED_EMBY_VERSION_FOR_TEST:-4.9.5.0}"
         TIMESTAMP="test"
         JS_NAMES=("${JS_NAMES_FOR_TEST[@]}")
         JS_NAMES_BASH_ARRAY="$(printf '    "%s"\n' "${JS_NAMES[@]}")"

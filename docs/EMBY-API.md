@@ -94,8 +94,13 @@ The add-ons this installer sets up (`emby-ratings.js`, `Reviews.js`,
 `Spotlight.js`, `emby-elsewhere.js`) run **inside the web client** and hook into
 the item-detail view (`/Users/{userId}/Items/{itemId}`). On opening a title they
 read its `ProviderIds` (IMDb/TMDb) from Emby's own response and then call the
-third-party rating APIs (TMDB / MDBList / Kinopoisk) — directly, or through the
-nginx API proxy this project adds. So the add-ons are **not** Emby endpoints:
+third-party rating APIs (TMDB / MDBList / Kinopoisk, and OMDb for the
+Oscar/Emmy awards of `emby-ratings.js`) — directly, or through the nginx API
+proxy this project adds. Besides that they read two static files the installer
+places next to them, `/web/spotlight-items.txt` and `/web/ratings-data.json`, and
+`emby-ratings.js` probes the optional server plugin endpoints
+`/emby/NativeSpotlight/Config` and `/emby/NativeSpotlight/<provider>` (`404`
+without the plugin, which is not part of Emby). So the add-ons are **not** Emby endpoints:
 they are consumers of the same `Items/{itemId}` the client already fetches, plus
 a fan-out to external APIs. This is exactly why they only apply to clients that
 run the web UI (browsers, and any device opening Emby in a browser) and never to
@@ -197,8 +202,13 @@ Los add-ons que instala este proyecto (`emby-ratings.js`, `Reviews.js`,
 enganchan en la vista de detalle del ítem (`/Users/{userId}/Items/{itemId}`).
 Al abrir un título leen su `ProviderIds` (IMDb/TMDb) de la respuesta del propio
 Emby y con eso llaman a las APIs de ratings de terceros (TMDB / MDBList /
-Kinopoisk) — directo, o a través del API proxy de nginx que agrega este
-proyecto. Es decir, los add-ons **no** son endpoints de Emby: son consumidores
+Kinopoisk, y OMDb para los premios Oscar/Emmy de `emby-ratings.js`) — directo,
+o a través del API proxy de nginx que agrega este proyecto. Además leen dos
+archivos estáticos que el instalador deja junto a ellos,
+`/web/spotlight-items.txt` y `/web/ratings-data.json`, y `emby-ratings.js`
+consulta los endpoints del plugin de servidor opcional
+`/emby/NativeSpotlight/Config` y `/emby/NativeSpotlight/<proveedor>` (`404` sin
+el plugin, que no es parte de Emby). Es decir, los add-ons **no** son endpoints de Emby: son consumidores
 del mismo `Items/{itemId}` que el cliente ya pide, más un fan-out a APIs
 externas. Por eso mismo solo aplican a clientes que ejecutan la UI web
 (navegadores, y cualquier dispositivo que abra Emby en un navegador) y nunca a

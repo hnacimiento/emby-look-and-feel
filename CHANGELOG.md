@@ -13,6 +13,89 @@ with `./install-emby-custom.sh --version`.
 
 ### [Unreleased]
 
+### [1.2.0] - 2026-10-13
+
+Tested against Emby 4.10.1.0 (upstream: Embymalism CSS 4.10.1.0 and the
+rewritten `emby-ratings.js` of 2026-09-30).
+
+#### Added
+- `emby-ratings.js` awards via OMDb: optional `OMDB_API_KEY` in
+  `secrets/api.env` (wizard, `--silent` environment variable, live check that
+  only warns). With the API proxy, `https://www.omdbapi.com/` is rewritten to
+  `<API_PROXY_URL>omdb/` and only a placeholder reaches the browser; the new
+  nginx `location /api-proxy/omdb/` adds the key, caches answers 7 days (OMDb
+  `401` 10 minutes) and answers `503` without calling OMDb when it has no
+  key. `render-keys.sh` and `emby-api-keys.conf.example` carry the OMDb key;
+  `check.sh` tests the route; the installer smoke-tests it.
+- Config keys `RATINGS_ENABLE_AWARDS` and `RATINGS_ENABLE_CUSTOM_RATINGS`
+  for the new `enableAwards`/`enableCustomRatings` settings. Settings that
+  the downloaded addon does not have are skipped with a warning, so older
+  and newer upstream versions keep installing.
+- `ratings-data.json` (read by the new `emby-ratings.js` before any API
+  call): an empty object is installed by default (no more 404 retries every
+  60 s per browser), or your own JSON object with `RATINGS_DATA_FILE`.
+  Backed up, restored by rollback, re-copied by reapply, shown by `--status`.
+- The CSS follows the Emby version: if upstream `main`'s `Embymalism.css`
+  is made for another Emby than the detected one, the archived
+  `Archive/Embymalism_<version>.css` for your version is installed instead
+  (warning if upstream has none). `CSS_AUTO_MATCH_EMBY_VERSION` (default `1`)
+  turns it off; `CSS_PIN_REF` is always respected. The manifest records
+  `css_source` and `css_emby_version`.
+- Detection and report of the optional NativeSpotlight server plugin used
+  by the new `emby-ratings.js` (summary, manifest, `--status`).
+- `?v=<sha256 prefix>` on the addon `<script>` tags in `index.html`: a new
+  addon version gets a new URL, so neither browsers nor a caching reverse
+  proxy keep serving the old file. Verified in PHASE 9/9.
+- `purge-assets.sh --all-web` (every cached `/web/` entry).
+- When the Emby URL does not answer and the container is on a macvlan/ipvlan
+  network (unreachable from its own Docker host), the error explains it and
+  suggests a URL through the reverse proxy.
+- `--status` also checks `spotlight-items.txt`, `ratings-data.json` and the
+  Emby version against the one recorded at install time.
+
+#### Changed
+- `TESTED_EMBY_VERSION` is `4.10.1.0`.
+- `reapply-<timestamp>.sh` refuses to run (exit `1`, nothing touched) when
+  Emby's version differs from the one recorded at install time: its staged
+  `index.html`/`skinmanager.js` are the old version's files. `--force`
+  overrides. The watchdog logs that case and does not call reapply.
+- `purge-assets.sh` prints only the cached URI, never the rest of the cache
+  key (which holds the client's Authorization/Cookie values).
+- `.gitignore`: the per-site nginx files (`emby-api-keys.conf`,
+  `emby-resolver.conf`) are ignored explicitly.
+
+#### Fixed
+- `index.html` kept getting a trailing newline Emby's file does not have, so
+  every run reported "index.html changed" and rewrote the saved baseline.
+- `render-keys.sh --from-truenas` split the keys with `IFS`, so an empty
+  optional key would have shifted the next key into the wrong variable; it
+  now reads them line by line.
+- fail2ban `[emby-api-proxy]` never counted the API proxy's rate-limit `429`:
+  `limit_req` answers after the `rewrite`, so the log line carries the
+  upstream path (`/3/configuration`) and the filter only matched
+  `/api-proxy/...`. A second failregex now matches any `429` with
+  `cache_status=-` in the proxy logs (nginx's own answer); a `429` or `401`
+  passed through from a third-party API is still not counted.
+- API proxy / CORS proxy DNS: the `resolver` moved out of
+  `emby-api-common.conf` and `emby-cors-proxy.conf` into a per-site
+  `snippets/emby-resolver.conf` (template `emby-resolver.conf.example`, not
+  versioned). The hard-coded public resolvers timed out (`could not be
+  resolved (110)` → 502) on networks that only allow their own DNS.
+
+#### Security
+- Native nginx block of WordPress/PHP vulnerability-scan paths on the Emby
+  vhost (`deploy/nginx/etc/nginx/snippets/emby-scan-block.conf`): a regex
+  `location` returning `444`, complementing the `[emby-web-scan]` fail2ban
+  jail. An OWASP Coraza WAF was evaluated for this and deferred — the
+  experimental `coraza-nginx` connector stalls WebSocket/streaming and hangs
+  on `deny` (see `docs/SECURITY-LAYERS.md`, layer 11b).
+- Access-log `token_id` now also covers tokens sent in headers
+  (`X-Emby-Token`, `X-MediaBrowser-Token`, or `Token="…"` inside
+  `X-Emby-Authorization` / `Authorization`), not only in the URL. Android/TV
+  apps send the token this way, so their sessions were logged as `token_id=-`.
+
+### [1.1.0] - 2026-09-29
+
 #### Added
 - API proxy authenticated against the Emby session: nginx reflects the web
   client's `X-Emby-Token` into an `HttpOnly; Secure; SameSite=Strict;
@@ -24,6 +107,11 @@ with `./install-emby-custom.sh --version`.
   installer translates emby-elsewhere.js's German UI texts to English or
   Spanish at install time, or leaves them untouched. Recorded in the
   manifest (`elsewhere.ui_language`).
+- Spotlight.js's optional `spotlight-items.txt` is now downloaded, staged,
+  installed, verified, backed up and re-applied like the addons (a
+  comment-only upstream template by default), removing the harmless
+  `/web/spotlight-items.txt` 404 out of the box. Recorded in the manifest
+  (`spotlight_items_file` / `spotlight_items_sha256`).
 
 #### Changed
 - The installer (code, comments, messages, `--help`, generated
@@ -35,14 +123,21 @@ with `./install-emby-custom.sh --version`.
 
 #### Security
 - Found (by comparing a decade-old open-source Emby-for-Samsung client
-  against this deployment's real traffic) and fixed, on the shared nginx
-  host, an access-log redaction gap: modern Emby clients send the session
-  token as an `X-Emby-Token=` URL parameter, not only as a header, so it
-  was being logged in plaintext — 2,576 occurrences in a single day's log
-  before the fix. This lives in the shared vhost's `nginx.conf`, outside
-  this project's tracked `deploy/nginx/` files; see
-  [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md#13-access-log-token-redaction-vhosts-shared-nginxconf--not-tracked-in-this-repo)
-  for the full finding, fix, and validation.
+  against this deployment's real traffic) and fixed an access-log token
+  leak: modern Emby clients send the session token as an `X-Emby-Token=`
+  URL parameter, not only as a header, so it was being logged in plaintext
+  (2,576 occurrences in a single day's log). The token is now redacted from
+  the URL and, instead of losing traceability, pseudonymized into a stable
+  `token_id = HMAC-SHA256(secret, token)` (njs, `deploy/nginx/etc/nginx/`)
+  plus nginx's native `request_id` — session/request correlation with no
+  reusable credential in the log. New nginx files
+  (`conf.d/emby-log-redaction.conf`, `njs/emby-log.js`, `main.d/njs.conf`)
+  ship under `deploy/nginx/`; see
+  [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md) layer 13 for the full
+  finding, design, and validation.
+- fail2ban `emby-web-scan` jail added (`deploy/nginx/etc/fail2ban/`) that
+  bans WordPress/PHP vulnerability scanners hitting the Emby vhost
+  (validated 642 matches / 0 false positives).
 
 #### Fixed
 - Post-install verification compared Reviews.js against the literals
@@ -101,6 +196,98 @@ script informa su versión con `./install-emby-custom.sh --version`.
 
 ### [Sin publicar]
 
+### [1.2.0] - 2026-10-13
+
+Probado contra Emby 4.10.1.0 (upstream: CSS de Embymalism 4.10.1.0 y el
+`emby-ratings.js` reescrito el 2026-09-30).
+
+#### Agregado
+- Premios en `emby-ratings.js` vía OMDb: `OMDB_API_KEY` opcional en
+  `secrets/api.env` (wizard, variable de entorno en `--silent`, chequeo en
+  vivo que solo avisa). Con el API proxy, `https://www.omdbapi.com/` se
+  reescribe a `<API_PROXY_URL>omdb/` y al navegador solo llega un
+  placeholder; la nueva `location /api-proxy/omdb/` de nginx agrega la key,
+  cachea 7 días (el `401` de OMDb, 10 minutos) y responde `503` sin llamar a
+  OMDb cuando no tiene key. `render-keys.sh` y `emby-api-keys.conf.example`
+  incluyen la key de OMDb; `check.sh` prueba la ruta; el instalador hace un
+  smoke test.
+- Claves de configuración `RATINGS_ENABLE_AWARDS` y
+  `RATINGS_ENABLE_CUSTOM_RATINGS` para los nuevos ajustes
+  `enableAwards`/`enableCustomRatings`. Los ajustes que el addon descargado
+  no tiene se saltean con un aviso, así que versiones de upstream más viejas
+  o más nuevas se siguen instalando.
+- `ratings-data.json` (lo lee el nuevo `emby-ratings.js` antes de llamar a
+  cualquier API): por defecto se instala un objeto vacío (se acaban los
+  reintentos con 404 cada 60 s por navegador), o tu propio objeto JSON con
+  `RATINGS_DATA_FILE`. Con backup, restaurado por rollback, re-copiado por
+  reapply y mostrado por `--status`.
+- El CSS sigue a la versión de Emby: si el `Embymalism.css` de `main` es
+  para otro Emby que el detectado, se instala el archivado
+  `Archive/Embymalism_<versión>.css` de tu versión (con aviso si upstream no
+  tiene uno). `CSS_AUTO_MATCH_EMBY_VERSION` (por defecto `1`) lo desactiva;
+  `CSS_PIN_REF` siempre se respeta. El manifest registra `css_source` y
+  `css_emby_version`.
+- Detección e informe del plugin de servidor opcional NativeSpotlight que
+  usa el nuevo `emby-ratings.js` (resumen, manifest, `--status`).
+- `?v=<prefijo del sha256>` en los `<script>` de los addons en
+  `index.html`: una versión nueva de un addon tiene una URL nueva, así que ni
+  los navegadores ni un reverse proxy con caché siguen sirviendo el archivo
+  viejo. Verificado en PHASE 9/9.
+- `purge-assets.sh --all-web` (todas las entradas cacheadas de `/web/`).
+- Cuando la URL de Emby no responde y el container está en una red
+  macvlan/ipvlan (inalcanzable desde su propio host Docker), el error lo
+  explica y sugiere una URL a través del reverse proxy.
+- `--status` también controla `spotlight-items.txt`, `ratings-data.json` y la
+  versión de Emby contra la registrada al instalar.
+
+#### Cambiado
+- `TESTED_EMBY_VERSION` es `4.10.1.0`.
+- `reapply-<timestamp>.sh` se niega a correr (exit `1`, sin tocar nada)
+  cuando la versión de Emby difiere de la registrada al instalar: su
+  `index.html`/`skinmanager.js` preparados son los archivos de la versión
+  vieja. `--force` lo fuerza. El watchdog registra ese caso y no llama a
+  reapply.
+- `purge-assets.sh` imprime solo la URI cacheada, nunca el resto de la
+  clave de caché (que contiene los valores de Authorization/Cookie del
+  cliente).
+- `.gitignore`: se ignoran explícitamente los archivos nginx por sitio
+  (`emby-api-keys.conf`, `emby-resolver.conf`).
+
+#### Corregido
+- `index.html` quedaba con un salto de línea final que el archivo de Emby no
+  tiene, así que cada corrida informaba "index.html cambió" y reescribía el
+  baseline guardado.
+- `render-keys.sh --from-truenas` separaba las keys con `IFS`, así que una
+  key opcional vacía habría corrido la siguiente a la variable equivocada;
+  ahora las lee línea por línea.
+- La jail de fail2ban `[emby-api-proxy]` nunca contaba el `429` del rate
+  limit del API proxy: `limit_req` responde después del `rewrite`, así que la
+  línea del log lleva la ruta del upstream (`/3/configuration`) y el filtro
+  solo reconocía `/api-proxy/...`. Una segunda failregex cuenta ahora
+  cualquier `429` con `cache_status=-` en los logs del proxy (respuesta del
+  propio nginx); un `429` o `401` que viene de una API de terceros sigue sin
+  contar.
+- DNS del API proxy / CORS proxy: el `resolver` salió de
+  `emby-api-common.conf` y `emby-cors-proxy.conf` a un
+  `snippets/emby-resolver.conf` por sitio (plantilla
+  `emby-resolver.conf.example`, no versionado). Los resolvers públicos fijos
+  daban timeout (`could not be resolved (110)` → 502) en redes que solo
+  permiten su propio DNS.
+
+#### Seguridad
+- Bloqueo nativo de nginx de rutas de escaneo WordPress/PHP en el vhost de
+  Emby (`deploy/nginx/etc/nginx/snippets/emby-scan-block.conf`): un `location`
+  regex que devuelve `444`, complementando la jail de fail2ban
+  `[emby-web-scan]`. Se evaluó un WAF OWASP Coraza para esto y se pospuso — el
+  connector experimental `coraza-nginx` cuelga WebSocket/streaming y traba en
+  `deny` (ver `docs/SECURITY-LAYERS.md`, capa 11b).
+- El `token_id` del log de acceso ahora también cubre tokens enviados en
+  headers (`X-Emby-Token`, `X-MediaBrowser-Token`, o `Token="…"` dentro de
+  `X-Emby-Authorization` / `Authorization`), no solo en la URL. Las apps de
+  Android/TV mandan el token así, y sus sesiones quedaban como `token_id=-`.
+
+### [1.1.0] - 2026-09-29
+
 #### Agregado
 - API proxy autenticado contra la sesión de Emby: nginx refleja el
   `X-Emby-Token` de la web en una cookie `HttpOnly; Secure; SameSite=Strict;
@@ -112,6 +299,11 @@ script informa su versión con `./install-emby-custom.sh --version`.
   `de`): el instalador traduce los textos en alemán de emby-elsewhere.js al
   inglés o al español en el momento de instalar, o los deja intactos. Queda
   registrado en el manifest (`elsewhere.ui_language`).
+- El `spotlight-items.txt` opcional de Spotlight.js ahora se descarga,
+  stagea, instala, verifica, respalda y re-aplica como los addons (por
+  defecto, la plantilla solo-comentarios de upstream), eliminando de fábrica
+  el 404 inofensivo de `/web/spotlight-items.txt`. Queda registrado en el
+  manifest (`spotlight_items_file` / `spotlight_items_sha256`).
 
 #### Cambiado
 - El instalador (código, comentarios, mensajes, `--help`, scripts de
@@ -124,15 +316,21 @@ script informa su versión con `./install-emby-custom.sh --version`.
 
 #### Seguridad
 - Encontrado (comparando un cliente open source de Emby para Samsung de hace
-  una década contra el tráfico real de este despliegue) y corregido, en el
-  host de nginx compartido, un hueco en el enmascarado del log de acceso:
-  los clientes modernos de Emby mandan el token de sesión como parámetro de
-  URL `X-Emby-Token=`, no solo por header, así que quedaba en texto plano —
-  2.576 apariciones en un solo día de log antes del fix. Vive en el
-  `nginx.conf` del vhost compartido, fuera de los archivos versionados de
-  `deploy/nginx/` de este proyecto; ver
-  [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md#13-enmascarado-de-tokens-en-el-log-de-acceso-nginxconf-compartido-del-vhost--no-versionado-en-este-repo)
-  para el hallazgo completo, el arreglo y la validación.
+  una década contra el tráfico real de este despliegue) y corregido un leak
+  del token en el log de acceso: los clientes modernos de Emby mandan el
+  token de sesión como parámetro de URL `X-Emby-Token=`, no solo por header,
+  así que quedaba en texto plano (2.576 apariciones en un día). Ahora el
+  token se redacta de la URL y, en vez de perder trazabilidad, se
+  pseudonimiza en un `token_id = HMAC-SHA256(secret, token)` estable (njs,
+  `deploy/nginx/etc/nginx/`) más el `request_id` nativo de nginx —
+  correlación de sesión/request sin credencial reutilizable en el log. Los
+  archivos nuevos (`conf.d/emby-log-redaction.conf`, `njs/emby-log.js`,
+  `main.d/njs.conf`) están en `deploy/nginx/`; ver
+  [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md) capa 13 para el hallazgo,
+  el diseño y la validación.
+- Jail de fail2ban `emby-web-scan` (`deploy/nginx/etc/fail2ban/`) que banea
+  escáneres de vulnerabilidades WordPress/PHP contra el vhost de Emby
+  (validado 642 matches / 0 falsos positivos).
 
 #### Corregido
 - La verificación post-instalación comparaba Reviews.js contra los

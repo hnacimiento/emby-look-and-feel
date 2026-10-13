@@ -27,7 +27,7 @@ cp deploy/truenas.env.example deploy/truenas.env      # fill in host, port, user
 
 Both use `StrictHostKeyChecking=accept-new`: a new host is accepted on first contact, a *changed* host key aborts.
 
-`emby-reapply-watchdog.sh` runs on the Emby host from cron: it checks the addons, the `index.html` tags and the theme entry are still in the container and runs the newest `reapply-<timestamp>.sh` when an Emby update wiped them (`--dry-run` only reports). See the README, "Rollback, reapply, watchdog".
+`emby-reapply-watchdog.sh` runs on the Emby host from cron: it checks the addons, the `index.html` tags and the theme entry are still in the container and runs the newest `reapply-<timestamp>.sh` when a container recreation wiped them; if Emby's version changed it does not reapply and logs that the installer must be re-run (`--dry-run` only reports). See the README, "Rollback, reapply, watchdog".
 
 ## nginx
 
@@ -45,10 +45,18 @@ nginx must be built with `--with-http_auth_request_module` (check `nginx -V`); `
 |---|---|---|
 | `nginx/snippets/emby-cors-proxy.conf` | `server` | Allow-listed CORS proxy for the Rotten Tomatoes / AlloCiné fallback and Elsewhere deep links |
 | `nginx/conf.d/emby-api-cache.conf` | `http` | API proxy: cache zone, key-stripping map, client-origin maps (nothing hardcoded), rate-limit zone, include of the keys file |
-| `nginx/snippets/emby-api-proxy.conf` | `server` | `location = /_emby_auth` (session check via `auth_request`: LAN source IP or the `emby_proxy_token` cookie validated against Emby) + the three `location ^~ /api-proxy/{mdblist,tmdb,kinopoisk}/` |
+| `nginx/snippets/emby-api-proxy.conf` | `server` | `location = /_emby_auth` (session check via `auth_request`: LAN source IP or the `emby_proxy_token` cookie validated against Emby) + the four `location ^~ /api-proxy/{mdblist,tmdb,kinopoisk,omdb}/` (`omdb/` answers `503` when there is no OMDb key) |
 | `nginx/snippets/emby-api-common.conf` | — | Common body included by each API-proxy location |
-| `nginx/snippets/emby-api-keys.conf.example` | `http` | Template of the real keys file (`map` constants). Copy to `emby-api-keys.conf`, chmod 600; generate it with `render-keys.sh` |
-| `fail2ban/filter.d/emby-api-proxy.conf`, `fail2ban/jail.d/emby-api-proxy.conf` | fail2ban | Bans repeated 403/405/429 on `/api-proxy/` and `/cors-proxy/` |
+| `nginx/snippets/emby-api-keys.conf.example` | `http` | Template of the real keys file (`map` constants for TMDB, MDBList, Kinopoisk and OMDb; the OMDb one must exist even if empty). Copy to `emby-api-keys.conf`, chmod 600; generate it with `render-keys.sh` |
+| `nginx/snippets/emby-resolver.conf.example` | `location` | Template of the per-site `resolver` used by the API and CORS proxies. Copy to `emby-resolver.conf` with the DNS servers your LAN may use (if your network only allows its own DNS, public resolvers here make the proxies return 502) |
+| `nginx/snippets/emby-scan-block.conf` | `server` | Native block (regex `location`, returns 444) of WordPress/PHP vulnerability-scan paths on the Emby vhost. No WAF engine in the path, so it cannot stall WebSocket/streaming; still logged so fail2ban bans repeat offenders. See [docs/SECURITY-LAYERS.md](../docs/SECURITY-LAYERS.md) layer 11b |
+| `nginx/conf.d/emby-log-redaction.conf` | `http` | Access-log privacy + traceability: redacts `X-Emby-Token=` from the URL (chained on the api_key `map`) and defines the njs `$emby_token_id` (pseudonymized session id). See [docs/SECURITY-LAYERS.md](../docs/SECURITY-LAYERS.md) layer 13 |
+| `nginx/njs/emby-log.js` | njs | njs module computing `token_id = HMAC-SHA256(secret, token)` at log time (not reversible, not a credential), from the token in the URL or in the headers. Reads the secret from `secrets/emby-token-hmac.key` |
+| `nginx/main.d/njs.conf` | **main** | `load_module` for njs. Loaded by a one-time `include /etc/nginx/main.d/*.conf;` at the top of `nginx.conf` (the only main-context line these improvements need) |
+| `fail2ban/filter.d/emby-api-proxy.conf`, `fail2ban/jail.d/emby-api-proxy.conf` | fail2ban | Bans repeated 401/403/405/429 on `/api-proxy/` and `/cors-proxy/` |
+| `fail2ban/filter.d/emby-web-scan.conf`, `fail2ban/jail.d/emby-web-scan.conf` | fail2ban | Bans WordPress/PHP vulnerability scanners hitting the Emby vhost (`/wp-json`, `xmlrpc`, `.env`, …) |
+
+The Emby log_formats (`emby_timing` / `emby_cache`, in the infra project's `conf.d/emby-tuning.conf`) reference `$emby_args_safe`, `token_id=$emby_token_id` and `request_id=$request_id`; the HMAC secret is generated on the host with `openssl rand -hex 32 > /etc/nginx/secrets/emby-token-hmac.key` (chmod 600) and is never committed.
 
 Scripts in `deploy/nginx/`:
 
@@ -56,10 +64,10 @@ Scripts in `deploy/nginx/`:
 ./deploy/nginx/render-keys.sh --from-truenas --out /tmp/keys.conf   # keys file from the NAS's secrets/api.env, never printed
 ./deploy/nginx/install.sh --vhost /etc/nginx/conf.d/emby.conf --keys /tmp/keys.conf --fail2ban
 ./deploy/nginx/check.sh https://emby.example.com --lan-origin http://192.168.1.10:8096
-./deploy/nginx-ssh.sh -- /path/to/purge-assets.sh                  # after an install, drop nginx's cached addon files
+./deploy/nginx-ssh.sh -- /path/to/purge-assets.sh                  # after an install that changed the CSS, drop nginx's cached theme.css (--all-web: every /web/ entry)
 ```
 
-`install.sh` uploads everything as `.new`, backs up the vhost, swaps the files, runs `nginx -t` **with the real config path** (`--nginx-conf` if it is not `/etc/nginx/nginx.conf`), reloads only on success and reverts everything otherwise; with `--fail2ban` it also installs the jail and reloads fail2ban. `check.sh` is the external test matrix (allowed targets 200 + CORS header + cache HIT, denied 403, preflight 204, POST 405, no key leaks). Always run `check.sh` after `install.sh`.
+`install.sh` uploads everything as `.new`, backs up the vhost, swaps the files, runs `nginx -t` **with the real config path** (`--nginx-conf` if it is not `/etc/nginx/nginx.conf`), reloads only on success and reverts everything otherwise; with `--fail2ban` it also installs the jail and reloads fail2ban. `check.sh` is the external test matrix (allowed targets 200 + CORS header + cache HIT, OMDb 200 or `503` if no key, denied 403, preflight 204, POST 405, no key leaks). Always run `check.sh` after `install.sh`.
 
 If your nginx layout differs (Debian `sites-available`, Nginx Proxy Manager, Docker): the snippets are plain `location` blocks and the `conf.d` file is plain `http`-context directives — put them wherever your setup includes such files (NPM: the snippets go into the proxy host's *Custom locations* / *Advanced* tab; the `http`-context file into a custom `conf.d` include).
 
@@ -92,7 +100,7 @@ cp deploy/truenas.env.example deploy/truenas.env      # completá host, puerto, 
 
 Ambos usan `StrictHostKeyChecking=accept-new`: un host nuevo se acepta en el primer contacto; una clave de host *cambiada* corta.
 
-`emby-reapply-watchdog.sh` corre en el host de Emby desde cron: comprueba que los addons, los tags de `index.html` y la entrada del tema siguen en el container y ejecuta el `reapply-<timestamp>.sh` más reciente cuando una actualización de Emby los borró (`--dry-run` solo informa). Ver el README, "Rollback, reapply, watchdog".
+`emby-reapply-watchdog.sh` corre en el host de Emby desde cron: comprueba que los addons, los tags de `index.html` y la entrada del tema siguen en el container y ejecuta el `reapply-<timestamp>.sh` más reciente cuando una recreación del container los borró; si cambió la versión de Emby no hace reapply y deja registrado que hay que volver a correr el instalador (`--dry-run` solo informa). Ver el README, "Rollback, reapply, watchdog".
 
 ## nginx
 
@@ -110,10 +118,18 @@ nginx tiene que estar compilado con `--with-http_auth_request_module` (ver `ngin
 |---|---|---|
 | `nginx/snippets/emby-cors-proxy.conf` | `server` | CORS proxy con lista blanca para el fallback de Rotten Tomatoes / AlloCiné y los deep-links de Elsewhere |
 | `nginx/conf.d/emby-api-cache.conf` | `http` | API proxy: zona de caché, map que quita la key, maps de origen del cliente (nada hardcodeado), zona de rate limit, include del archivo de keys |
-| `nginx/snippets/emby-api-proxy.conf` | `server` | `location = /_emby_auth` (chequeo de sesión vía `auth_request`: IP de origen en la LAN o la cookie `emby_proxy_token` validada contra Emby) + las tres `location ^~ /api-proxy/{mdblist,tmdb,kinopoisk}/` |
+| `nginx/snippets/emby-api-proxy.conf` | `server` | `location = /_emby_auth` (chequeo de sesión vía `auth_request`: IP de origen en la LAN o la cookie `emby_proxy_token` validada contra Emby) + las cuatro `location ^~ /api-proxy/{mdblist,tmdb,kinopoisk,omdb}/` (`omdb/` responde `503` si no hay key de OMDb) |
 | `nginx/snippets/emby-api-common.conf` | — | Cuerpo común incluido por cada location del API proxy |
-| `nginx/snippets/emby-api-keys.conf.example` | `http` | Plantilla del archivo real de keys (constantes `map`). Copiar a `emby-api-keys.conf`, chmod 600; generarlo con `render-keys.sh` |
-| `fail2ban/filter.d/emby-api-proxy.conf`, `fail2ban/jail.d/emby-api-proxy.conf` | fail2ban | Banea 403/405/429 repetidos en `/api-proxy/` y `/cors-proxy/` |
+| `nginx/snippets/emby-api-keys.conf.example` | `http` | Plantilla del archivo real de keys (constantes `map` para TMDB, MDBList, Kinopoisk y OMDb; la de OMDb tiene que existir aunque esté vacía). Copiar a `emby-api-keys.conf`, chmod 600; generarlo con `render-keys.sh` |
+| `nginx/snippets/emby-resolver.conf.example` | `location` | Plantilla del `resolver` por sitio que usan el API proxy y el CORS proxy. Copiar a `emby-resolver.conf` con los DNS que tu LAN puede usar (si tu red solo permite su propio DNS, poner resolvers públicos acá hace que los proxies devuelvan 502) |
+| `nginx/snippets/emby-scan-block.conf` | `server` | Bloqueo nativo (`location` regex, devuelve 444) de rutas de escaneo WordPress/PHP en el vhost de Emby. Sin motor WAF en el camino, así que no puede colgar WebSocket/streaming; se loguea igual para que fail2ban banee reincidentes. Ver [docs/SECURITY-LAYERS.md](../docs/SECURITY-LAYERS.md) capa 11b |
+| `nginx/conf.d/emby-log-redaction.conf` | `http` | Privacidad + trazabilidad del log de acceso: redacta `X-Emby-Token=` de la URL (encadenado sobre el `map` de api_key) y define el `$emby_token_id` njs (id de sesión pseudonimizado). Ver [docs/SECURITY-LAYERS.md](../docs/SECURITY-LAYERS.md) capa 13 |
+| `nginx/njs/emby-log.js` | njs | Módulo njs que calcula `token_id = HMAC-SHA256(secret, token)` en tiempo de log (no reversible, no es credencial), a partir del token en la URL o en los headers. Lee el secreto de `secrets/emby-token-hmac.key` |
+| `nginx/main.d/njs.conf` | **principal** | `load_module` de njs. Cargado por un `include /etc/nginx/main.d/*.conf;` de una sola vez al tope de `nginx.conf` (la única línea de contexto principal que estas mejoras necesitan) |
+| `fail2ban/filter.d/emby-api-proxy.conf`, `fail2ban/jail.d/emby-api-proxy.conf` | fail2ban | Banea 401/403/405/429 repetidos en `/api-proxy/` y `/cors-proxy/` |
+| `fail2ban/filter.d/emby-web-scan.conf`, `fail2ban/jail.d/emby-web-scan.conf` | fail2ban | Banea escáneres de vulnerabilidades WordPress/PHP contra el vhost de Emby (`/wp-json`, `xmlrpc`, `.env`, …) |
+
+Los log_format de Emby (`emby_timing` / `emby_cache`, en el `conf.d/emby-tuning.conf` del proyecto de infra) referencian `$emby_args_safe`, `token_id=$emby_token_id` y `request_id=$request_id`; el secreto HMAC se genera en el host con `openssl rand -hex 32 > /etc/nginx/secrets/emby-token-hmac.key` (chmod 600) y nunca se commitea.
 
 Scripts en `deploy/nginx/`:
 
@@ -121,10 +137,10 @@ Scripts en `deploy/nginx/`:
 ./deploy/nginx/render-keys.sh --from-truenas --out /tmp/keys.conf   # archivo de keys desde el secrets/api.env del NAS, sin imprimirlas
 ./deploy/nginx/install.sh --vhost /etc/nginx/conf.d/emby.conf --keys /tmp/keys.conf --fail2ban
 ./deploy/nginx/check.sh https://emby.example.com --lan-origin http://192.168.1.10:8096
-./deploy/nginx-ssh.sh -- /ruta/a/purge-assets.sh                  # tras una instalación, descartar los addons cacheados por nginx
+./deploy/nginx-ssh.sh -- /ruta/a/purge-assets.sh                  # tras una instalación que cambió el CSS, descartar el theme.css cacheado (--all-web: todo /web/)
 ```
 
-`install.sh` sube todo como `.new`, respalda el vhost, intercambia los archivos, corre `nginx -t` **con la ruta real de la config** (`--nginx-conf` si no es `/etc/nginx/nginx.conf`), recarga solo si pasa y revierte todo si no; con `--fail2ban` instala además la jail y recarga fail2ban. `check.sh` es la matriz de pruebas externa (destinos permitidos 200 + header CORS + HIT de caché, denegados 403, preflight 204, POST 405, sin fugas de keys). Corré siempre `check.sh` después de `install.sh`.
+`install.sh` sube todo como `.new`, respalda el vhost, intercambia los archivos, corre `nginx -t` **con la ruta real de la config** (`--nginx-conf` si no es `/etc/nginx/nginx.conf`), recarga solo si pasa y revierte todo si no; con `--fail2ban` instala además la jail y recarga fail2ban. `check.sh` es la matriz de pruebas externa (destinos permitidos 200 + header CORS + HIT de caché, OMDb 200 o `503` si no hay key, denegados 403, preflight 204, POST 405, sin fugas de keys). Corré siempre `check.sh` después de `install.sh`.
 
 Si tu nginx tiene otra estructura (Debian `sites-available`, Nginx Proxy Manager, Docker): los snippets son bloques `location` planos y el archivo de `conf.d` son directivas planas de contexto `http` — ponelos donde tu instalación incluya ese tipo de archivos (NPM: los snippets van en *Custom locations* / *Advanced* del proxy host; el archivo de contexto `http` en un include propio de `conf.d`).
 

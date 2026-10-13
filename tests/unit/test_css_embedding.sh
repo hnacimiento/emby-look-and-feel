@@ -52,7 +52,7 @@ if command -v jq >/dev/null 2>&1; then
     ACTUAL_HASH="$(printf '%s' "$FIXED_PAYLOAD" | jq -j '.CustomCss' | sha256sum | awk '{print $1}')"
     assert_eq "$ACTUAL_HASH" "$EXPECTED_HASH" "round-trip completo (leer -> json_escape -> jq -j) da el mismo hash que el archivo original, con el salto de línea final incluido"
 else
-    echo "  [skip] jq no disponible localmente: se omite el round-trip completo vía jq -j (SÍ está disponible en el TrueNAS real, ver docs/investigations/)"
+    echo "  [skip] jq no disponible localmente: se omite el round-trip completo vía jq -j (SÍ está disponible en el host real de Emby)"
 fi
 rm -f "$TMP_WITH_TRAILING_NL"
 

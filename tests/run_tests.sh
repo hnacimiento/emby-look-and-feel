@@ -13,6 +13,7 @@ SUITES=(
     "$HERE/unit/test_theme_injection.sh"
     "$HERE/unit/test_api_proxy_rewrite.sh"
     "$HERE/unit/test_config_file.sh"
+    "$HERE/unit/test_ratings_omdb_css.sh"
     "$HERE/integration/test_rollback_failure_states.sh"
     "$HERE/integration/test_reapply_failure_states.sh"
 )

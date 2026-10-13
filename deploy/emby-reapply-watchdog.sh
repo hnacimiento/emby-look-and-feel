@@ -13,7 +13,11 @@
 #   2. index.html references every addon;
 #   3. if the last install used theme mode, skinmanager.js contains the
 #      theme entry and theme.css exists.
-# Exit 0 = healthy or reapplied OK; 1 = reapply failed; 2 = usage/precondition.
+# If Emby's version changed since that install (e.g. the app was upgraded),
+# it does NOT reapply: the staged index.html/skinmanager.js are the old
+# version's files, so it logs that the installer must be re-run instead.
+# Exit 0 = healthy or reapplied OK; 1 = reapply failed or needs a reinstall;
+# 2 = usage/precondition.
 # Logs to <custom>/watchdog.log. Never downloads anything: reapply re-copies
 # what is already staged under <custom>/dashboard-ui/.
 set -Eeuo pipefail
@@ -59,6 +63,15 @@ if [ "${#PROBLEMS[@]}" -eq 0 ]; then
 fi
 
 log "drift detected: ${PROBLEMS[*]}"
+# After an Emby upgrade the staged index.html/skinmanager.js belong to the old
+# version: reapply refuses them, and the fix is a fresh install, not a retry.
+INSTALLED_VER="$(grep -o '"emby_server_version": "[^"]*"' "$MANIFEST" | cut -d'"' -f4 || true)"
+EMBY_URL_M="$(grep -o '"emby_url": "[^"]*"' "$MANIFEST" | cut -d'"' -f4 || true)"
+CURRENT_VER="$(curl -s -m 10 "$EMBY_URL_M/emby/System/Info/Public" 2>/dev/null | grep -oE '"Version":"[^"]*"' | head -n1 | cut -d'"' -f4 || true)"
+if [ -n "$INSTALLED_VER" ] && [ -n "$CURRENT_VER" ] && [ "$INSTALLED_VER" != "unknown" ] && [ "$CURRENT_VER" != "$INSTALLED_VER" ]; then
+    log "Emby changed from $INSTALLED_VER to $CURRENT_VER: not reapplying; run install-emby-custom.sh"
+    exit 1
+fi
 if [ "$DRY" = "1" ]; then
     log "dry-run: would run $REAPPLY"
     exit 0

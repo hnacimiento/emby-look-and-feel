@@ -90,6 +90,15 @@ check "TMDB via proxy, repeat" 200 -H "$REF" "$BASE/api-proxy/tmdb/3/configurati
 header_is "X-Api-Cache" "HIT" "  second call served from the shared cache"
 check "MDBList via proxy" 200 -H "$REF" "$BASE/api-proxy/mdblist/tmdb/movie/27205?apikey=$PLACEHOLDER"
 check "Kinopoisk via proxy (header key)" 200 -H "$REF" -H "X-API-KEY: $PLACEHOLDER" "$BASE/api-proxy/kinopoisk/api/v2.2/films?keyword=Inception&yearFrom=2010&yearTo=2010"
+# OMDb is optional: 503 = no key in emby-api-keys.conf (awards disabled), not a failure.
+OMDB_STATUS="$(curl -s -m 25 -o "$TMP/body" -D "$TMP/headers" -w '%{http_code}' -H "$REF" "$BASE/api-proxy/omdb/?i=tt1375666&apikey=$PLACEHOLDER" 2>/dev/null || echo "000")"
+if [ "$OMDB_STATUS" = "503" ]; then
+    echo "  [info] OMDb via proxy -> 503: no OMDb key configured in nginx (awards disabled)"
+elif [ "$OMDB_STATUS" = "200" ] && grep -q '"Response":"True"' "$TMP/body"; then
+    printf '  [ok]   %-58s %s\n' "OMDb via proxy (key injected by nginx)" "$OMDB_STATUS"; PASS=$((PASS + 1))
+else
+    printf '  [FAIL] %-58s got %s: %s\n' "OMDb via proxy" "$OMDB_STATUS" "$(head -c 120 "$TMP/body")"; FAIL=$((FAIL + 1))
+fi
 check "no Referer/Origin -> 403" 403 "$BASE/api-proxy/tmdb/3/configuration?api_key=$PLACEHOLDER"
 check "foreign Referer -> 403" 403 -H "Referer: https://evil.example/" "$BASE/api-proxy/tmdb/3/configuration?api_key=$PLACEHOLDER"
 check "look-alike domain -> 403" 403 -H "Referer: ${BASE}.evil.example/" "$BASE/api-proxy/tmdb/3/configuration?api_key=$PLACEHOLDER"

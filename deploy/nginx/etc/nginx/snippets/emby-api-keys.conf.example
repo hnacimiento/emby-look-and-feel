@@ -1,16 +1,19 @@
 # ============================================================
-# Keys reales de las APIs de terceros para el API proxy de los addons.
+# Real third-party API keys for the addons' API proxy.
 #
-# Copiar a /etc/nginx/snippets/emby-api-keys.conf, completar, y:
+# Copy to /etc/nginx/snippets/emby-api-keys.conf, fill in, and:
 #     chmod 600 /etc/nginx/snippets/emby-api-keys.conf
-# (nginx lee la configuración como root al arrancar/recargar; los workers
-# no necesitan leer el archivo). Este archivo .example NO lleva valores.
+# (nginx reads the configuration as root on start/reload; the workers
+# do not need to read the file). This .example file carries NO values.
 #
-# Se definen como 'map' porque nginx no permite 'set' en contexto http y
-# no lee variables de entorno en las directivas; un map con 'default' es
-# la forma estándar de tener una "constante" disponible en las locations.
+# They are defined as 'map' because nginx does not allow 'set' in http
+# context and does not read environment variables in directives; a map with
+# 'default' is the standard way to have a "constant" available in the locations.
 # ============================================================
 
 map $host $emby_tmdb_api_key      { default ""; }
 map $host $emby_mdblist_api_key   { default ""; }
 map $host $emby_kinopoisk_api_key { default ""; }
+# Optional (awards in emby-ratings.js). Must exist even when empty: the
+# omdb/ location reads it, and an empty value makes it answer 503.
+map $host $emby_omdb_api_key      { default ""; }

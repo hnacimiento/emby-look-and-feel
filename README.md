@@ -73,18 +73,20 @@ The CSS is served from Emby's own `dashboard-ui` folder, so Emby never needs Git
 | `emby-elsewhere.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ TMDB key (or placeholder), region, provider filters, CORS proxy, UI translated German→English/Spanish (`ELSEWHERE_UI_LANGUAGE`) |
 | `emby-linklogos.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | – |
 | `emby-media-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | – |
-| `emby-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ TMDB/MDBList/Kinopoisk keys (or placeholder) + rating providers + cache + proxies |
+| `emby-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ TMDB/MDBList/Kinopoisk/OMDb keys (or placeholder) + rating providers + awards + cache + proxies |
 | `Spotlight.js` | [EmbySpotlight](https://github.com/v1rusnl/EmbySpotlight) | ✅ keys (or placeholder) + full configuration (29 settings) |
 | `Reviews.js` | [EmbyReviews](https://github.com/v1rusnl/EmbyReviews) | ✅ language/limits, TMDB key only if already declared upstream |
-| `Embymalism.css` | [Embymalism](https://github.com/v1rusnl/Embymalism) | – (installed as a theme: `modules/themes/embymalism/theme.css` + one entry in `modules/skinmanager.js`) |
+| `Embymalism.css` | [Embymalism](https://github.com/v1rusnl/Embymalism) | – (the one made for your Emby version; installed as a theme: `modules/themes/embymalism/theme.css` + one entry in `modules/skinmanager.js`) |
+| `spotlight-items.txt` | [EmbySpotlight](https://github.com/v1rusnl/EmbySpotlight) | – (upstream's comment-only template) |
+| `ratings-data.json` | generated | – (`{}`, or your own file via `RATINGS_DATA_FILE`) |
 
-All six JS files are copied into the container's `dashboard-ui` folder and referenced with a `<script>` tag injected into `index.html` (idempotent — reinstalling never duplicates them). The CSS becomes an entry named **Embymalism** in Emby's **Theme** selector (Preferences → Display → Theme), not Branding `CustomCss`. With the API proxy configured, the third-party keys never reach the browser (see [API proxy](#api-proxy-shared-ratings-cache--third-party-keys-out-of-the-browser)).
+All six JS files are copied into the container's `dashboard-ui` folder and referenced with a `<script>` tag injected into `index.html` (idempotent — reinstalling never duplicates them). Each tag carries `?v=<first 12 hex of the file's SHA256>`, so after an install neither browsers nor a caching reverse proxy keep serving the previous version. The CSS becomes an entry named **Embymalism** in Emby's **Theme** selector (Preferences → Display → Theme), not Branding `CustomCss`. With the API proxy configured, the third-party keys never reach the browser (see [API proxy](#api-proxy-shared-ratings-cache--third-party-keys-out-of-the-browser)).
 
 ## Requirements
 
-**On the host (TrueNAS SCALE):** `bash`, `docker`, `curl`, `grep`, `sed`, `awk`, `sha256sum`, `wc`, `tar`, `flock` — all standard. Optional: `node` (syntax-check of the JS files), `jq` (exact verification of the Branding value and manifest sanity check).
+**On the host (TrueNAS SCALE):** `bash`, `docker`, `curl`, `grep`, `sed`, `awk`, `sha256sum`, `wc`, `tar`, `tail`, `truncate`, `flock` — all standard. Optional: `node` (syntax-check of the JS files), `jq` (exact verification of the Branding value and manifest sanity check).
 
-**Nothing is hardcoded:** the container is chosen from `docker ps -a` (names/images containing "emby"); the data path is the chosen container's live `/config` mount, checked writable before anything else; the Emby URL is probed on the published `8096/tcp` port and asked for otherwise; Emby's version is read and compared with the tested one (warns, never blocks). Container and URL are remembered in `.emby-installer-state` next to the script — or set once in the [configuration file](#configuration-file).
+**Nothing is hardcoded:** the container is chosen from `docker ps -a` (names/images containing "emby"); the data path is the chosen container's live `/config` mount, checked writable before anything else; the Emby URL is probed on the published `8096/tcp` port and asked for otherwise (if the container is on a macvlan/ipvlan network the host cannot reach its IP — a Docker limitation — and the script says so: give a URL through your reverse proxy, e.g. `EMBY_URL="https://emby.example.com"`); Emby's version is read and compared with the tested one (warns, never blocks). Container and URL are remembered in `.emby-installer-state` next to the script — or set once in the [configuration file](#configuration-file).
 
 ## Usage
 
@@ -116,12 +118,12 @@ cp install-emby-custom.conf.example install-emby-custom.conf   # then edit it
 
 - Plain `KEY="value"` lines; the script **parses** the file (never `source`s it), accepts only the documented keys and validates every value by type — a typo or a `$(...)` in there is an error, not a silent default.
 - Precedence: command-line flag > config file > built-in default. `EMBY_CONTAINER`/`EMBY_URL` can live there instead of on every command line.
-- Keys are grouped by addon: theme (`CSS_PIN_REF`, `THEME_SET_AS_DEFAULT`), Elsewhere (region, UI language, provider filters), Reviews (languages, limits), Spotlight/ratings settings, backup retention, and the optional nginx proxies (`CORS_PROXY_URL`, `API_PROXY_URL`, `API_PROXY_RESOLVE_IP`).
+- Keys are grouped by addon: theme (`CSS_PIN_REF`, `CSS_AUTO_MATCH_EMBY_VERSION`, `THEME_SET_AS_DEFAULT`), Elsewhere (region, UI language, provider filters), Reviews (languages, limits), Spotlight/ratings settings (including `RATINGS_ENABLE_AWARDS`, `RATINGS_ENABLE_CUSTOM_RATINGS`, `RATINGS_DATA_FILE`), backup retention, and the optional nginx proxies (`CORS_PROXY_URL`, `API_PROXY_URL`, `API_PROXY_RESOLVE_IP`).
 - **API keys never go in it** — they stay in `secrets/api.env` inside the Emby data path. The config file is gitignored; the tracked template is [install-emby-custom.conf.example](install-emby-custom.conf.example).
 
 ### First run — credentials wizard
 
-With no `secrets/api.env` yet, the script asks for **EMBY_API_KEY** (Emby → Dashboard → API Keys, required), **TMDB_API_KEY** (a v3 API key from [themoviedb.org](https://www.themoviedb.org/settings/api), required — not the v4 read token), **MDBLIST_API_KEY** and **KINOPOISK_API_KEY** (optional). Keys are typed with echo off, never printed or logged, saved with `chmod 600`, and the two required ones are live-validated against TMDB and Emby before anything is downloaded. Cancelling the wizard exits cleanly with nothing written. On later runs the file is loaded (owner and permissions checked first) and the wizard is skipped.
+With no `secrets/api.env` yet, the script asks for **EMBY_API_KEY** (Emby → Dashboard → API Keys, required), **TMDB_API_KEY** (a v3 API key from [themoviedb.org](https://www.themoviedb.org/settings/api), required — not the v4 read token), **MDBLIST_API_KEY**, **KINOPOISK_API_KEY** and **OMDB_API_KEY** (optional; the OMDb one enables the Oscar/Emmy awards row of `emby-ratings.js`, free key at [omdbapi.com](https://www.omdbapi.com/apikey.aspx)). An already existing `secrets/api.env` can get `OMDB_API_KEY='...'` added by hand at any time. Keys are typed with echo off, never printed or logged, saved with `chmod 600`, and the two required ones are live-validated against TMDB and Emby before anything is downloaded. Cancelling the wizard exits cleanly with nothing written. On later runs the file is loaded (owner and permissions checked first) and the wizard is skipped.
 
 ## Execution modes and flags
 
@@ -136,7 +138,7 @@ Flags (all optional, combinable):
 - `--container=NAME`, `--emby-url=URL` — skip detection for that item.
 - `--config=PATH`, `--print-config` — see [Configuration file](#configuration-file).
 - `--dry-run` — everything up to and including the addon edits and the `index.html`/`skinmanager.js` staging, then stop **before** backup/install. Nothing in the container or Emby changes.
-- `--status` — compare the container (addons, `index.html`, `skinmanager.js`, `theme.css`, Branding CustomCss, container id) with the last successful install; exit `0` if identical, `1` on drift.
+- `--status` — compare the container (addons, `index.html`, `skinmanager.js`, `theme.css`, `spotlight-items.txt`, `ratings-data.json`, Branding CustomCss, container id, Emby version) with the last successful install, and report whether the optional NativeSpotlight plugin is present; exit `0` if identical, `1` on drift.
 - `--check-updates` — download and compare hashes with the last successful install, report what changed upstream, exit without installing.
 - `--uninstall` — run the newest generated `rollback-<timestamp>.sh` for the detected container.
 - `--require-known-hashes` — abort (instead of warn) if a downloaded addon's SHA256 differs from the last successful install. Never blocks the first time an addon is seen.
@@ -152,8 +154,10 @@ PHASE 1/9  Dependencies        mandatory tools present, node/jq detected
 PHASE 2/9  Auto-detection      pick/confirm container, derive /config and Emby URL,
                               check /config is writable, take the lock, read Emby's version
 PHASE 3/9  Credentials         wizard (first run) or load secrets/api.env (owner/perms checked)
-PHASE 4/9  Key validation      live check against TMDB and Emby
-PHASE 5/9  Download            6 JS + CSS, SHA256 recorded and compared with the last install
+PHASE 4/9  Key validation      live check against TMDB and Emby (+ OMDb if configured, warn-only);
+                              detect the optional NativeSpotlight server plugin
+PHASE 5/9  Download            6 JS + CSS (the one made for your Emby version) + spotlight-items.txt,
+                              SHA256 recorded and compared with the last install
 PHASE 6/9  Edit                keys/placeholders + settings injected, API bases rewritten,
                               index.html <script> tags and the skinmanager.js theme entry staged,
                               API-proxy smoke test
@@ -185,6 +189,7 @@ emby-backup-<timestamp>.tgz            # portable copy of backups/<timestamp>/, 
 └── custom/
     ├── source/                        # pristine downloads, *.original suffix, for audit
     ├── dashboard-ui/                  # staged, edited copies actually installed
+    │   ├── ratings-data.json          # {} or RATINGS_DATA_FILE
     │   └── modules/                   # patched skinmanager.js + themes/embymalism/theme.css
     ├── index.html.original            # Emby's own index.html, our <script> tags stripped
     ├── skinmanager.js.original        # Emby's own skinmanager.js, our theme entry stripped
@@ -213,7 +218,9 @@ bash /mnt/toolbox/configs/emby/custom/reapply-<timestamp>.sh
 
 Both read `secrets/api.env` at run time (the key is never embedded). `rollback-<timestamp>.sh` uses `backups/<timestamp>/` and falls back to the portable `.tgz` if that directory is gone. Neither assumes success: they report `SUCCESS`/`PARTIAL`/`FAILED` from what actually restored (hash-verified), and `reapply` takes its own lightweight backup first so a failure mid-reapply is reverted too.
 
-**Watchdog:** [deploy/emby-reapply-watchdog.sh](deploy/emby-reapply-watchdog.sh) checks, from cron on the Emby host, that the addons, the `index.html` tags and the theme entry are still in the container and runs the newest `reapply` when an Emby update wiped them (TrueNAS: System Settings → Advanced → Cron Jobs, e.g. every 15 minutes):
+**After an Emby upgrade, re-run the installer, not reapply.** The staged `index.html` and `skinmanager.js` are the old Emby version's files plus our additions; copying them over a newer Emby would replace its own files. `reapply` therefore refuses (exit `1`, nothing touched) when Emby's version differs from the one recorded at install time; `--force` overrides it if you know what you are doing. `--status` flags the same case.
+
+**Watchdog:** [deploy/emby-reapply-watchdog.sh](deploy/emby-reapply-watchdog.sh) checks, from cron on the Emby host, that the addons, the `index.html` tags and the theme entry are still in the container and runs the newest `reapply` when a container recreation wiped them; if Emby's version changed, it logs that the installer must be re-run instead (TrueNAS: System Settings → Advanced → Cron Jobs, e.g. every 15 minutes):
 
 ```bash
 /mnt/toolbox/scripts/emby-reapply-watchdog.sh --container ix-emby-emby-1 --custom /mnt/toolbox/configs/emby/custom
@@ -235,14 +242,14 @@ Summary here; the full layer-by-layer walk-through is in [docs/SECURITY-LAYERS.m
 
 - `secrets/api.env` (chmod 600) is the **only** persistent place any key lives. Its owner must match the running user; permissions are checked before reading.
 - `EMBY_API_KEY` travels only as an `X-Emby-Token` header via a private `curl -K` config file (never a command-line argument), and is asserted absent from every installed file before and after install.
-- With the [API proxy](#api-proxy-shared-ratings-cache--third-party-keys-out-of-the-browser), `TMDB_API_KEY`/`MDBLIST_API_KEY`/`KINOPOISK_API_KEY` **never reach the browser**: the addons get a placeholder and nginx injects the real key server-side; the install aborts if a real key value is found in a staged addon. Without the proxy they are embedded in the JS, as upstream does.
+- With the [API proxy](#api-proxy-shared-ratings-cache--third-party-keys-out-of-the-browser), `TMDB_API_KEY`/`MDBLIST_API_KEY`/`KINOPOISK_API_KEY`/`OMDB_API_KEY` **never reach the browser**: the addons get a placeholder and nginx injects the real key server-side; the install aborts if a real key value is found in a staged addon. Without the proxy they are embedded in the JS, as upstream does.
 - `Reviews.js` only gets `TMDB_API_KEY` if that declaration already exists upstream.
 - The container is pinned by Docker `Id` and re-checked before backup and before install.
 - The config file is parsed and validated, never sourced. Generated scripts get every value shell-quoted.
 
 ## Reverse proxy (nginx): CORS proxy and API proxy
 
-Optional. Everything lives under [deploy/nginx/](deploy/nginx/), which mirrors the server layout (`etc/nginx/conf.d/`, `etc/nginx/snippets/`, `etc/fail2ban/...`); `nginx.conf` is never touched, and the Emby vhost only gets two `include` lines. Helpers: `install.sh` (upload, backup, `nginx -t`, reload, auto-revert), `render-keys.sh` (keys file without printing keys), `check.sh` (external test matrix), `purge-assets.sh` (drop the cached addon files after an install). See [deploy/README.md](deploy/README.md).
+Optional. Everything lives under [deploy/nginx/](deploy/nginx/), which mirrors the server layout (`etc/nginx/conf.d/`, `etc/nginx/snippets/`, `etc/fail2ban/...`); `nginx.conf` is never touched, and the Emby vhost only gets two `include` lines. Helpers: `install.sh` (upload, backup, `nginx -t`, reload, auto-revert), `render-keys.sh` (keys file without printing keys), `check.sh` (external test matrix), `purge-assets.sh` (drop cached `theme.css`/addon files after an install; `--all-web` for every `/web/` entry). See [deploy/README.md](deploy/README.md).
 
 ### CORS proxy for the addons
 
@@ -250,21 +257,24 @@ Optional. Everything lives under [deploy/nginx/](deploy/nginx/), which mirrors t
 
 ### API proxy: shared ratings cache + third-party keys out of the browser
 
-The rating badges load one by one because each is a separate browser call to MDBList, TMDB or Kinopoisk, cached by the addons only in `localStorage` per device. With `API_PROXY_URL` set, the installer rewrites the API bases in the four addons that call them to `<API_PROXY_URL>mdblist/`, `tmdb/`, `kinopoisk/` and injects the placeholder `via-nginx-api-proxy` instead of the real keys. nginx (`conf.d/emby-api-cache.conf` + `snippets/emby-api-proxy.conf` + `emby-api-common.conf`, keys in `snippets/emby-api-keys.conf` chmod 600) strips the placeholder, adds the real key, and caches the JSON in its own zone for **all users and devices** (24h MDBList/TMDB, 7d Kinopoisk, stale served instantly while refreshing). Only GET/HEAD from Emby's own web (same-origin check by PCRE back-reference — nothing hardcoded — or a private-range origin), rate-limited per IP, one fixed upstream per location, and **authenticated against the Emby session**: nginx reflects the web client's `X-Emby-Token` into an `HttpOnly; Secure; SameSite=Strict; Path=/api-proxy/` cookie and validates it with `auth_request` against `/emby/System/Info` (LAN source IPs bypass it); requires nginx built with `--with-http_auth_request_module`. A fail2ban jail (`etc/fail2ban/`) bans repeated 401/403/405/429. The installer smoke-tests the chain first (warn-only). `API_PROXY_RESOLVE_IP` lets that smoke test reach the proxy by LAN IP when the NAS cannot hairpin to its own public address.
+The rating badges load one by one because each is a separate browser call to MDBList, TMDB or Kinopoisk, cached by the addons only in `localStorage` per device. With `API_PROXY_URL` set, the installer rewrites the API bases in the four addons that call them to `<API_PROXY_URL>mdblist/`, `tmdb/`, `kinopoisk/`, `omdb/` and injects the placeholder `via-nginx-api-proxy` instead of the real keys. nginx (`conf.d/emby-api-cache.conf` + `snippets/emby-api-proxy.conf` + `emby-api-common.conf`, keys in `snippets/emby-api-keys.conf` chmod 600) strips the placeholder, adds the real key, and caches the JSON in its own zone for **all users and devices** (24h MDBList/TMDB, 7d Kinopoisk and OMDb, stale served instantly while refreshing; `omdb/` answers `503` without calling OMDb when nginx has no OMDb key, and caches OMDb's `401` — bad key or daily quota spent — for 10 minutes). Only GET/HEAD from Emby's own web (same-origin check by PCRE back-reference — nothing hardcoded — or a private-range origin), rate-limited per IP, one fixed upstream per location, and **authenticated against the Emby session**: nginx reflects the web client's `X-Emby-Token` into an `HttpOnly; Secure; SameSite=Strict; Path=/api-proxy/` cookie and validates it with `auth_request` against `/emby/System/Info` (LAN source IPs bypass it); requires nginx built with `--with-http_auth_request_module`. A fail2ban jail (`etc/fail2ban/`) bans repeated 401/403/405/429. The installer smoke-tests the chain first (warn-only). `API_PROXY_RESOLVE_IP` lets that smoke test reach the proxy by LAN IP when the NAS cannot hairpin to its own public address.
 
 Net effect: the first person to open a title pays the API calls; everyone else, on any device, gets the cached answer in milliseconds, and no API key ever reaches a browser. `API_PROXY_URL=""` restores upstream behavior.
 
-> After an install that changes `skinmanager.js` or the addons, browsers that already loaded this Emby version keep their cached copy (Emby serves modules with a one-year `Cache-Control` and a `?v=<Emby version>` query the server injects) and nginx caches `.js` for a day: run `deploy/nginx/purge-assets.sh` on the proxy host and, per browser, DevTools → Network → *Disable cache* → reload once. New browsers and private windows see everything immediately.
+> Caches: the addon tags carry `?v=<hash>`, so a new addon version always gets a new URL. Two files keep theirs: `theme.css`, and `modules/skinmanager.js`, which Emby loads as `?v=<Emby version>` and whose content changes when the theme entry is added — e.g. a container recreated by an app update serves the stock file until you reinstall, and browsers or nginx (which caches static files for a day) may keep that copy. After such an install run `deploy/nginx/purge-assets.sh` on the proxy host; browsers that opened Emby in between need one hard reload (Ctrl+Shift+R).
 
 ## Update detection
 
 Every download's SHA256 is compared with `known-source-sha256sums.txt` (hashes of the previous *successful* install). A change warns and proceeds; the baseline is only updated after PHASE 9/9 passes, so a run that downloads a broken addon and fails later leaves the last good hashes intact. `--require-known-hashes` makes a change a hard stop; `--check-updates` reports without installing; `CSS_PIN_REF` pins the stylesheet to a commit.
 
+**The CSS follows your Emby version.** Upstream keeps one `Embymalism.css` per Emby release: `main` is for the newest Emby it supports (its first line says which, e.g. `Embymalism_4.10.1.0`) and older ones live in `Archive/Embymalism_<version>.css`. If `main` is for a different Emby than yours, the installer uses the archived CSS for your version, or keeps `main` with a warning if upstream has none (`CSS_AUTO_MATCH_EMBY_VERSION="0"` disables this; a `CSS_PIN_REF` is always respected). The manifest records `css_source` (`main`/`archive`/`pin`) and `css_emby_version`.
+
 ## Compatibility
 
 | Emby version | Status |
 |---|---|
-| `4.10.0.40` | ✅ Tested (current) |
+| `4.10.1.0` | ✅ Tested (current) |
+| `4.10.0.40` | ✅ Tested (earlier) |
 | `4.9.5.0` | ✅ Tested (earlier) |
 | Other `4.9.x`/`4.10.x` | ⚠️ Untested — likely fine; the version-mismatch warning tells you |
 | `5.x` or newer | ⚠️ Untested — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#compatibility-and-future-emby-versions) |
@@ -300,6 +310,15 @@ All 29 relevant `CONFIG` properties are set from `SPOTLIGHT_*` in the config fil
 
 A separate addon with its own `CONFIG` (same keys, same per-provider toggles, `RATINGS_*` in the config file). Left unconfigured it shows no ratings at all, so the script configures it too.
 
+Since upstream's 2026-09-30 rewrite it also has:
+
+- **Awards** (`RATINGS_ENABLE_AWARDS`): Oscar and Emmy wins, from **OMDb**. They only show with `OMDB_API_KEY` in `secrets/api.env` (with the API proxy, also in nginx: `render-keys.sh`); without a key the setting is left empty and no awards row appears. Golden Globes, BAFTA, Razzies and the festival wins of earlier versions were dropped upstream.
+- **`enableCustomRatings`** (`RATINGS_ENABLE_CUSTOM_RATINGS`): master switch for the external ratings.
+- **`ratings-data.json`**: the addon reads `/web/ratings-data.json` first and only calls the APIs for what is missing; when the file is absent it retries every 60 s per browser (a 404 each time). The installer installs `{}` (no 404s, same behavior) or your own JSON object via `RATINGS_DATA_FILE` (keys `<movie|tv>_<tmdbId>`; upstream does not document the format further).
+- **Optional NativeSpotlight server plugin**: the addon asks `/emby/NativeSpotlight/*`; with the plugin, ratings and awards are resolved server-side and its settings override the `enable*` switches. Upstream does not publish it, so the installer only detects it and reports it (summary, manifest, `--status`).
+
+Settings that a given addon version does not have are skipped with a warning instead of failing, so an older or newer upstream file still installs.
+
 ### Reviews.js
 
 `REVIEWS_PRIMARY_LANGUAGE`, `REVIEWS_SECONDARY_LANGUAGE`, `REVIEWS_MAX_REVIEWS`, `REVIEWS_PREVIEW_LENGTH`, `REVIEWS_EXPANDED_BY_DEFAULT`, `REVIEWS_SHOW_LANGUAGE_FLAGS`. `TMDB_API_KEY` is injected only if the declaration already exists upstream.
@@ -310,6 +329,8 @@ A separate addon with its own `CONFIG` (same keys, same per-provider toggles, `R
 - The German→English/Spanish phrase list is a fixed set; the post-edit audit warns if upstream changed its text.
 - The API proxy's session check needs nginx built with `--with-http_auth_request_module`; without it, remove the `auth_request` line and only the (soft) Referer/Origin gate remains — see [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md).
 - Warming the ratings cache for the whole library ahead of time is not implemented.
+- `ratings-data.json` is only installed (empty or your file), not generated; the NativeSpotlight server plugin is only detected, not installed.
+- Spotlight.js reads an optional curated list at `/web/spotlight-items.txt` (one Emby item ID per line, `#` for comments). The installer downloads and installs upstream's comment-only template by default, so there is no 404 out of the box: leave it as-is for the normal random selection, or add item IDs to curate the Spotlight. (If you delete it, the request 404s and Spotlight falls back to random — also harmless.)
 - Designed for Emby in Docker on TrueNAS SCALE; other setups are out of scope.
 
 ## Tests
@@ -318,11 +339,11 @@ A separate addon with its own `CONFIG` (same keys, same per-provider toggles, `R
 ./tests/run_tests.sh
 ```
 
-Pure bash, no extra dependencies. Unit tests extract the **real** functions from the script (escaping, injection helpers, CSS embedding, theme injection, API-proxy rewrite, config loader); integration tests generate the real `rollback`/`reapply` scripts and run them against `docker`/`curl` stubs, exercising the failure state machine. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs syntax checks, shellcheck, the suite, and a guard against deployment-specific data in tracked files. Details: [tests/README.md](tests/README.md).
+Pure bash, no extra dependencies. Unit tests extract the **real** functions from the script (escaping, injection helpers, CSS embedding, theme injection, API-proxy rewrite including OMDb, config loader, CSS version detection, optional settings, `ratings-data.json` validation); integration tests generate the real `rollback`/`reapply` scripts and run them against `docker`/`curl` stubs, exercising the failure state machine and the reapply Emby-version guard. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs syntax checks, shellcheck, the suite, and a guard against deployment-specific data in tracked files. Details: [tests/README.md](tests/README.md).
 
 ## Contributing
 
-Issues and pull requests are welcome — especially reports of this working (or not) on newer Emby versions with the specific error, and end-to-end tests of the install flow (today the suite covers the functions and the recovery scripts, not PHASE 1–9 end to end). Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing the injection logic: most of what looks simplifiable was tried and reverted for a documented reason. Code and comments in the script are in English; user-facing messages are currently in Spanish.
+Issues and pull requests are welcome — especially reports of this working (or not) on newer Emby versions with the specific error, and end-to-end tests of the install flow (today the suite covers the functions and the recovery scripts, not PHASE 1–9 end to end). Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing the injection logic: most of what looks simplifiable was tried and reverted for a documented reason. Code, comments and user-facing messages of the script are in English; the documentation is bilingual.
 
 ## Acknowledgments
 
@@ -399,18 +420,20 @@ El CSS se sirve desde la propia carpeta `dashboard-ui` de Emby, así que Emby no
 | `emby-elsewhere.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ key de TMDB (o placeholder), región, filtros de proveedores, CORS proxy, interfaz traducida alemán→inglés/español (`ELSEWHERE_UI_LANGUAGE`) |
 | `emby-linklogos.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | – |
 | `emby-media-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | – |
-| `emby-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ keys de TMDB/MDBList/Kinopoisk (o placeholder) + proveedores + caché + proxies |
+| `emby-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ keys de TMDB/MDBList/Kinopoisk/OMDb (o placeholder) + proveedores + premios + caché + proxies |
 | `Spotlight.js` | [EmbySpotlight](https://github.com/v1rusnl/EmbySpotlight) | ✅ keys (o placeholder) + configuración completa (29 ajustes) |
 | `Reviews.js` | [EmbyReviews](https://github.com/v1rusnl/EmbyReviews) | ✅ idioma/límites, key de TMDB solo si upstream ya la declara |
-| `Embymalism.css` | [Embymalism](https://github.com/v1rusnl/Embymalism) | – (instalado como tema: `modules/themes/embymalism/theme.css` + una entrada en `modules/skinmanager.js`) |
+| `Embymalism.css` | [Embymalism](https://github.com/v1rusnl/Embymalism) | – (el hecho para tu versión de Emby; instalado como tema: `modules/themes/embymalism/theme.css` + una entrada en `modules/skinmanager.js`) |
+| `spotlight-items.txt` | [EmbySpotlight](https://github.com/v1rusnl/EmbySpotlight) | – (la plantilla de upstream, solo comentarios) |
+| `ratings-data.json` | generado | – (`{}`, o tu propio archivo vía `RATINGS_DATA_FILE`) |
 
-Los seis JS se copian a `dashboard-ui` del container y se referencian con un `<script>` inyectado en `index.html` (idempotente — reinstalar nunca los duplica). El CSS pasa a ser una entrada llamada **Embymalism** en el combo **Theme** de Emby (Preferencias → Display → Theme), no `CustomCss` de Branding. Con el API proxy configurado, las keys de terceros nunca llegan al navegador (ver [API proxy](#api-proxy-caché-compartida-de-ratings--keys-de-terceros-fuera-del-navegador)).
+Los seis JS se copian a `dashboard-ui` del container y se referencian con un `<script>` inyectado en `index.html` (idempotente — reinstalar nunca los duplica). Cada tag lleva `?v=<primeros 12 hex del SHA256 del archivo>`, así que después de instalar ni los navegadores ni un reverse proxy con caché siguen sirviendo la versión anterior. El CSS pasa a ser una entrada llamada **Embymalism** en el combo **Theme** de Emby (Preferencias → Display → Theme), no `CustomCss` de Branding. Con el API proxy configurado, las keys de terceros nunca llegan al navegador (ver [API proxy](#api-proxy-caché-compartida-de-ratings--keys-de-terceros-fuera-del-navegador)).
 
 ## Requisitos
 
-**En el host (TrueNAS SCALE):** `bash`, `docker`, `curl`, `grep`, `sed`, `awk`, `sha256sum`, `wc`, `tar`, `flock` — todo estándar. Opcionales: `node` (chequeo de sintaxis de los JS), `jq` (verificación exacta del valor de Branding y del manifest).
+**En el host (TrueNAS SCALE):** `bash`, `docker`, `curl`, `grep`, `sed`, `awk`, `sha256sum`, `wc`, `tar`, `tail`, `truncate`, `flock` — todo estándar. Opcionales: `node` (chequeo de sintaxis de los JS), `jq` (verificación exacta del valor de Branding y del manifest).
 
-**Nada hardcodeado:** el container se elige de `docker ps -a` (nombres/imágenes con "emby"); la ruta de datos es el mount `/config` real del container elegido, verificado escribible antes de nada; la URL de Emby se prueba en el puerto publicado `8096/tcp` y si no, se pregunta; la versión de Emby se lee y compara con la probada (avisa, nunca bloquea). Container y URL se recuerdan en `.emby-installer-state` junto al script — o se fijan una vez en el [archivo de configuración](#archivo-de-configuración).
+**Nada hardcodeado:** el container se elige de `docker ps -a` (nombres/imágenes con "emby"); la ruta de datos es el mount `/config` real del container elegido, verificado escribible antes de nada; la URL de Emby se prueba en el puerto publicado `8096/tcp` y si no, se pregunta (si el container está en una red macvlan/ipvlan el host no puede llegar a su IP — una limitación de Docker — y el script lo avisa: usá una URL a través de tu reverse proxy, p. ej. `EMBY_URL="https://emby.example.com"`); la versión de Emby se lee y compara con la probada (avisa, nunca bloquea). Container y URL se recuerdan en `.emby-installer-state` junto al script — o se fijan una vez en el [archivo de configuración](#archivo-de-configuración).
 
 ## Uso
 
@@ -442,12 +465,12 @@ cp install-emby-custom.conf.example install-emby-custom.conf   # y editalo
 
 - Líneas `KEY="valor"`; el script **parsea** el archivo (nunca lo "sourcea"), acepta solo las claves documentadas y valida cada valor por tipo — un error de tipeo o un `$(...)` ahí es un error, no un default silencioso.
 - Precedencia: flag de línea de comando > archivo de configuración > default del script. `EMBY_CONTAINER`/`EMBY_URL` pueden vivir ahí en vez de en cada comando.
-- Claves agrupadas por addon: tema (`CSS_PIN_REF`, `THEME_SET_AS_DEFAULT`), Elsewhere (región, idioma de la interfaz, filtros de proveedores), Reviews (idiomas, límites), ajustes de Spotlight/ratings, retención de backups y los proxies nginx opcionales (`CORS_PROXY_URL`, `API_PROXY_URL`, `API_PROXY_RESOLVE_IP`).
+- Claves agrupadas por addon: tema (`CSS_PIN_REF`, `CSS_AUTO_MATCH_EMBY_VERSION`, `THEME_SET_AS_DEFAULT`), Elsewhere (región, idioma de la interfaz, filtros de proveedores), Reviews (idiomas, límites), ajustes de Spotlight/ratings (incluidos `RATINGS_ENABLE_AWARDS`, `RATINGS_ENABLE_CUSTOM_RATINGS`, `RATINGS_DATA_FILE`), retención de backups y los proxies nginx opcionales (`CORS_PROXY_URL`, `API_PROXY_URL`, `API_PROXY_RESOLVE_IP`).
 - **Las API keys nunca van ahí** — quedan en `secrets/api.env` dentro de la ruta de datos de Emby. El archivo está gitignored; la plantilla versionada es [install-emby-custom.conf.example](install-emby-custom.conf.example).
 
 ### Primera corrida — wizard de credenciales
 
-Sin `secrets/api.env` todavía, el script pide **EMBY_API_KEY** (Emby → Dashboard → API Keys, obligatoria), **TMDB_API_KEY** (una API key v3 de [themoviedb.org](https://www.themoviedb.org/settings/api), obligatoria — no el token de lectura v4), **MDBLIST_API_KEY** y **KINOPOISK_API_KEY** (opcionales). Se tipean sin eco, no se imprimen ni se loguean, se guardan con `chmod 600`, y las dos obligatorias se validan en vivo contra TMDB y Emby antes de descargar nada. Cancelar el wizard sale limpio sin escribir nada. En corridas posteriores el archivo se carga (dueño y permisos verificados) y el wizard se saltea.
+Sin `secrets/api.env` todavía, el script pide **EMBY_API_KEY** (Emby → Dashboard → API Keys, obligatoria), **TMDB_API_KEY** (una API key v3 de [themoviedb.org](https://www.themoviedb.org/settings/api), obligatoria — no el token de lectura v4), **MDBLIST_API_KEY**, **KINOPOISK_API_KEY** y **OMDB_API_KEY** (opcionales; la de OMDb habilita la fila de premios Oscar/Emmy de `emby-ratings.js`, key gratis en [omdbapi.com](https://www.omdbapi.com/apikey.aspx)). A un `secrets/api.env` existente se le puede agregar `OMDB_API_KEY='...'` a mano en cualquier momento. Se tipean sin eco, no se imprimen ni se loguean, se guardan con `chmod 600`, y las dos obligatorias se validan en vivo contra TMDB y Emby antes de descargar nada. Cancelar el wizard sale limpio sin escribir nada. En corridas posteriores el archivo se carga (dueño y permisos verificados) y el wizard se saltea.
 
 ## Modos de ejecución y flags
 
@@ -462,7 +485,7 @@ Flags (todas opcionales, combinables):
 - `--container=NOMBRE`, `--emby-url=URL` — saltear la detección de ese dato.
 - `--config=PATH`, `--print-config` — ver [Archivo de configuración](#archivo-de-configuración).
 - `--dry-run` — todo hasta la edición de addons y la preparación de `index.html`/`skinmanager.js` inclusive, y para **antes** de backup/instalación. No cambia nada en el container ni en Emby.
-- `--status` — compara el container (addons, `index.html`, `skinmanager.js`, `theme.css`, CustomCss de Branding, id del container) con la última instalación exitosa; exit `0` si es idéntico, `1` si hay diferencias.
+- `--status` — compara el container (addons, `index.html`, `skinmanager.js`, `theme.css`, `spotlight-items.txt`, `ratings-data.json`, CustomCss de Branding, id del container, versión de Emby) con la última instalación exitosa, e informa si está el plugin opcional NativeSpotlight; exit `0` si es idéntico, `1` si hay diferencias.
 - `--check-updates` — descarga y compara hashes con la última instalación exitosa, informa qué cambió en upstream y sale sin instalar.
 - `--uninstall` — corre el `rollback-<timestamp>.sh` más reciente del container detectado.
 - `--require-known-hashes` — abortar (en vez de avisar) si el SHA256 de un addon descargado difiere de la última instalación exitosa. Nunca bloquea la primera vez que se ve un addon.
@@ -478,8 +501,10 @@ PHASE 1/9  Dependencias        herramientas obligatorias presentes, node/jq dete
 PHASE 2/9  Autodetección       elegir/confirmar container, derivar /config y URL de Emby,
                               verificar que /config es escribible, tomar el lock, leer la versión
 PHASE 3/9  Credenciales        wizard (primera vez) o cargar secrets/api.env (dueño/permisos verificados)
-PHASE 4/9  Validación de keys  chequeo en vivo contra TMDB y Emby
-PHASE 5/9  Descarga            6 JS + CSS, SHA256 registrado y comparado con la última instalación
+PHASE 4/9  Validación de keys  chequeo en vivo contra TMDB y Emby (+ OMDb si está configurada, solo avisa);
+                              detección del plugin de servidor opcional NativeSpotlight
+PHASE 5/9  Descarga            6 JS + CSS (el hecho para tu versión de Emby) + spotlight-items.txt,
+                              SHA256 registrado y comparado con la última instalación
 PHASE 6/9  Edición             keys/placeholders + ajustes inyectados, bases de API reescritas,
                               <script> en index.html y entrada de tema en skinmanager.js preparados,
                               smoke test del API proxy
@@ -511,6 +536,7 @@ emby-backup-<timestamp>.tgz            # copia portátil de backups/<timestamp>/
 └── custom/
     ├── source/                        # descargas intactas, sufijo *.original, para auditar
     ├── dashboard-ui/                  # copias editadas que realmente se instalan
+    │   ├── ratings-data.json          # {} o RATINGS_DATA_FILE
     │   └── modules/                   # skinmanager.js parcheado + themes/embymalism/theme.css
     ├── index.html.original            # el index.html de Emby sin nuestros <script>
     ├── skinmanager.js.original        # el skinmanager.js de Emby sin nuestra entrada
@@ -539,7 +565,9 @@ bash /mnt/toolbox/configs/emby/custom/reapply-<timestamp>.sh
 
 Ambos leen `secrets/api.env` al ejecutarse (la key nunca se embebe). `rollback-<timestamp>.sh` usa `backups/<timestamp>/` y cae al `.tgz` portátil si ese directorio ya no está. Ninguno asume éxito: informan `SUCCESS`/`PARTIAL`/`FAILED` según lo que realmente restauraron (verificado por hash), y `reapply` toma primero su propio backup liviano para poder revertir también un fallo a mitad de camino.
 
-**Watchdog:** [deploy/emby-reapply-watchdog.sh](deploy/emby-reapply-watchdog.sh) comprueba, desde cron en el host de Emby, que los addons, los tags de `index.html` y la entrada del tema siguen en el container, y corre el `reapply` más reciente cuando una actualización de Emby los borró (TrueNAS: System Settings → Advanced → Cron Jobs, p. ej. cada 15 minutos):
+**Después de actualizar Emby, volvé a correr el instalador, no reapply.** El `index.html` y el `skinmanager.js` preparados son los archivos de la versión vieja de Emby más nuestros agregados; copiarlos sobre un Emby más nuevo reemplazaría sus propios archivos. Por eso `reapply` se niega (exit `1`, sin tocar nada) cuando la versión de Emby difiere de la registrada al instalar; `--force` lo fuerza si sabés lo que hacés. `--status` marca el mismo caso.
+
+**Watchdog:** [deploy/emby-reapply-watchdog.sh](deploy/emby-reapply-watchdog.sh) comprueba, desde cron en el host de Emby, que los addons, los tags de `index.html` y la entrada del tema siguen en el container, y corre el `reapply` más reciente cuando una recreación del container los borró; si cambió la versión de Emby, deja registrado que hay que volver a correr el instalador (TrueNAS: System Settings → Advanced → Cron Jobs, p. ej. cada 15 minutos):
 
 ```bash
 /mnt/toolbox/scripts/emby-reapply-watchdog.sh --container ix-emby-emby-1 --custom /mnt/toolbox/configs/emby/custom
@@ -561,14 +589,14 @@ Resumen; el recorrido completo capa por capa está en [docs/SECURITY-LAYERS.md](
 
 - `secrets/api.env` (chmod 600) es el **único** lugar persistente donde vive una key. Su dueño debe coincidir con quien corre el script; los permisos se verifican antes de leerlo.
 - `EMBY_API_KEY` viaja solo como header `X-Emby-Token` vía un archivo de configuración privado de `curl -K` (nunca como argumento), y se verifica ausente de cada archivo instalado antes y después de instalar.
-- Con el [API proxy](#api-proxy-caché-compartida-de-ratings--keys-de-terceros-fuera-del-navegador), `TMDB_API_KEY`/`MDBLIST_API_KEY`/`KINOPOISK_API_KEY` **nunca llegan al navegador**: los addons reciben un placeholder y nginx inyecta la key real del lado servidor; la instalación aborta si encuentra una key real en un addon preparado. Sin el proxy van embebidas en los JS, como hace upstream.
+- Con el [API proxy](#api-proxy-caché-compartida-de-ratings--keys-de-terceros-fuera-del-navegador), `TMDB_API_KEY`/`MDBLIST_API_KEY`/`KINOPOISK_API_KEY`/`OMDB_API_KEY` **nunca llegan al navegador**: los addons reciben un placeholder y nginx inyecta la key real del lado servidor; la instalación aborta si encuentra una key real en un addon preparado. Sin el proxy van embebidas en los JS, como hace upstream.
 - `Reviews.js` solo recibe `TMDB_API_KEY` si esa declaración ya existe en upstream.
 - El container se fija por `Id` de Docker y se re-verifica antes del backup y antes de instalar.
 - El archivo de configuración se parsea y valida, nunca se "sourcea". Los scripts generados reciben cada valor entrecomillado para el shell.
 
 ## Reverse proxy (nginx): CORS proxy y API proxy
 
-Opcional. Todo vive en [deploy/nginx/](deploy/nginx/), que espeja la estructura del servidor (`etc/nginx/conf.d/`, `etc/nginx/snippets/`, `etc/fail2ban/...`); `nginx.conf` nunca se toca y el vhost de Emby solo recibe dos líneas `include`. Helpers: `install.sh` (subir, backup, `nginx -t`, reload, reversión automática), `render-keys.sh` (archivo de keys sin imprimirlas), `check.sh` (matriz de pruebas externa), `purge-assets.sh` (descartar los addons cacheados tras una instalación). Ver [deploy/README.md](deploy/README.md).
+Opcional. Todo vive en [deploy/nginx/](deploy/nginx/), que espeja la estructura del servidor (`etc/nginx/conf.d/`, `etc/nginx/snippets/`, `etc/fail2ban/...`); `nginx.conf` nunca se toca y el vhost de Emby solo recibe dos líneas `include`. Helpers: `install.sh` (subir, backup, `nginx -t`, reload, reversión automática), `render-keys.sh` (archivo de keys sin imprimirlas), `check.sh` (matriz de pruebas externa), `purge-assets.sh` (descartar `theme.css`/addons cacheados tras una instalación; `--all-web` para todas las entradas de `/web/`). Ver [deploy/README.md](deploy/README.md).
 
 ### CORS proxy para los addons
 
@@ -576,21 +604,24 @@ Opcional. Todo vive en [deploy/nginx/](deploy/nginx/), que espeja la estructura 
 
 ### API proxy: caché compartida de ratings + keys de terceros fuera del navegador
 
-Los calificadores aparecen de a uno porque cada uno es una llamada aparte desde el navegador a MDBList, TMDB o Kinopoisk, que los addons cachean solo en `localStorage` por dispositivo. Con `API_PROXY_URL` configurado, el instalador reescribe en los cuatro addons que las usan las bases de API a `<API_PROXY_URL>mdblist/`, `tmdb/`, `kinopoisk/` e inyecta el placeholder `via-nginx-api-proxy` en vez de las keys reales. nginx (`conf.d/emby-api-cache.conf` + `snippets/emby-api-proxy.conf` + `emby-api-common.conf`, keys en `snippets/emby-api-keys.conf` chmod 600) quita el placeholder, agrega la key real y cachea el JSON en su propia zona para **todos los usuarios y dispositivos** (24 h MDBList/TMDB, 7 d Kinopoisk; lo vencido se sirve al instante mientras se refresca). Solo GET/HEAD desde la propia web de Emby (chequeo de mismo origen por retrorreferencia PCRE — nada hardcodeado — o un origen de rango privado), rate limit por IP, un solo destino fijo por location, y **autenticado contra la sesión de Emby**: nginx refleja el `X-Emby-Token` de la web en una cookie `HttpOnly; Secure; SameSite=Strict; Path=/api-proxy/` y la valida con `auth_request` contra `/emby/System/Info` (las IPs de origen de la LAN lo saltean); requiere nginx compilado con `--with-http_auth_request_module`. Una jail de fail2ban (`etc/fail2ban/`) banea 401/403/405/429 repetidos. El instalador prueba la cadena antes (solo avisa). `API_PROXY_RESOLVE_IP` permite que ese smoke test llegue al proxy por IP de LAN cuando el NAS no puede hacer hairpin a su propia IP pública.
+Los calificadores aparecen de a uno porque cada uno es una llamada aparte desde el navegador a MDBList, TMDB o Kinopoisk, que los addons cachean solo en `localStorage` por dispositivo. Con `API_PROXY_URL` configurado, el instalador reescribe en los cuatro addons que las usan las bases de API a `<API_PROXY_URL>mdblist/`, `tmdb/`, `kinopoisk/`, `omdb/` e inyecta el placeholder `via-nginx-api-proxy` en vez de las keys reales. nginx (`conf.d/emby-api-cache.conf` + `snippets/emby-api-proxy.conf` + `emby-api-common.conf`, keys en `snippets/emby-api-keys.conf` chmod 600) quita el placeholder, agrega la key real y cachea el JSON en su propia zona para **todos los usuarios y dispositivos** (24 h MDBList/TMDB, 7 d Kinopoisk y OMDb; lo vencido se sirve al instante mientras se refresca; `omdb/` responde `503` sin llamar a OMDb si nginx no tiene key de OMDb, y cachea 10 minutos el `401` de OMDb — key mala o cupo diario agotado). Solo GET/HEAD desde la propia web de Emby (chequeo de mismo origen por retrorreferencia PCRE — nada hardcodeado — o un origen de rango privado), rate limit por IP, un solo destino fijo por location, y **autenticado contra la sesión de Emby**: nginx refleja el `X-Emby-Token` de la web en una cookie `HttpOnly; Secure; SameSite=Strict; Path=/api-proxy/` y la valida con `auth_request` contra `/emby/System/Info` (las IPs de origen de la LAN lo saltean); requiere nginx compilado con `--with-http_auth_request_module`. Una jail de fail2ban (`etc/fail2ban/`) banea 401/403/405/429 repetidos. El instalador prueba la cadena antes (solo avisa). `API_PROXY_RESOLVE_IP` permite que ese smoke test llegue al proxy por IP de LAN cuando el NAS no puede hacer hairpin a su propia IP pública.
 
 Efecto neto: la primera persona que abre un título paga las llamadas; el resto, desde cualquier dispositivo, recibe la respuesta cacheada en milisegundos, y ninguna API key llega jamás a un navegador. `API_PROXY_URL=""` vuelve al comportamiento de upstream.
 
-> Tras una instalación que cambie `skinmanager.js` o los addons, los navegadores que ya cargaron esta versión de Emby conservan su copia (Emby sirve los módulos con `Cache-Control` de un año y un `?v=<versión>` que inyecta el servidor) y nginx cachea los `.js` un día: corré `deploy/nginx/purge-assets.sh` en el host del proxy y, por navegador, DevTools → Network → *Disable cache* → recargar una vez. Navegadores nuevos y ventanas privadas ven todo al instante.
+> Cachés: los tags de los addons llevan `?v=<hash>`, así que una versión nueva de un addon siempre tiene una URL nueva. Dos archivos conservan la suya: `theme.css`, y `modules/skinmanager.js`, que Emby carga como `?v=<versión de Emby>` y cuyo contenido cambia al agregar la entrada del tema — p. ej. un container recreado por una actualización de la app sirve el archivo de fábrica hasta que reinstalás, y los navegadores o nginx (que cachea los estáticos un día) pueden quedarse con esa copia. Después de esa instalación corré `deploy/nginx/purge-assets.sh` en el host del proxy; los navegadores que abrieron Emby mientras tanto necesitan una recarga forzada (Ctrl+Shift+R).
 
 ## Detección de actualizaciones
 
 El SHA256 de cada descarga se compara con `known-source-sha256sums.txt` (hashes de la instalación *exitosa* anterior). Un cambio avisa y sigue; el baseline solo se actualiza cuando PHASE 9/9 pasa, así que una corrida que descarga un addon roto y falla después deja intactos los últimos hashes buenos. `--require-known-hashes` convierte un cambio en un freno; `--check-updates` informa sin instalar; `CSS_PIN_REF` fija la hoja de estilos a un commit.
 
+**El CSS sigue a tu versión de Emby.** Upstream mantiene un `Embymalism.css` por versión de Emby: `main` es para el Emby más nuevo que soporta (su primera línea lo dice, p. ej. `Embymalism_4.10.1.0`) y los anteriores quedan en `Archive/Embymalism_<versión>.css`. Si el de `main` es para otro Emby que el tuyo, el instalador usa el CSS archivado de tu versión, o mantiene `main` con un aviso si upstream no tiene uno (`CSS_AUTO_MATCH_EMBY_VERSION="0"` lo desactiva; un `CSS_PIN_REF` siempre se respeta). El manifest registra `css_source` (`main`/`archive`/`pin`) y `css_emby_version`.
+
 ## Compatibilidad
 
 | Versión de Emby | Estado |
 |---|---|
-| `4.10.0.40` | ✅ Probada (actual) |
+| `4.10.1.0` | ✅ Probada (actual) |
+| `4.10.0.40` | ✅ Probada (anterior) |
 | `4.9.5.0` | ✅ Probada (anterior) |
 | Otras `4.9.x`/`4.10.x` | ⚠️ No probadas — probablemente bien; el aviso de versión te lo dice |
 | `5.x` o más nuevas | ⚠️ No probadas — ver [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#compatibility-and-future-emby-versions) |
@@ -626,6 +657,15 @@ Las 29 propiedades relevantes de `CONFIG` se fijan desde `SPOTLIGHT_*` en el arc
 
 Un addon aparte con su propio `CONFIG` (mismas claves, mismos interruptores por proveedor, `RATINGS_*` en el archivo de configuración). Sin configurar no muestra ningún rating, por eso el script también lo configura.
 
+Desde la reescritura de upstream del 2026-09-30 además tiene:
+
+- **Premios** (`RATINGS_ENABLE_AWARDS`): Oscars y Emmys ganados, desde **OMDb**. Solo aparecen con `OMDB_API_KEY` en `secrets/api.env` (con el API proxy, también en nginx: `render-keys.sh`); sin key el ajuste queda vacío y no aparece la fila de premios. Upstream quitó los Golden Globes, BAFTA, Razzies y festivales de versiones anteriores.
+- **`enableCustomRatings`** (`RATINGS_ENABLE_CUSTOM_RATINGS`): interruptor general de los ratings externos.
+- **`ratings-data.json`**: el addon lee primero `/web/ratings-data.json` y solo llama a las APIs por lo que falta; si el archivo no existe reintenta cada 60 s por navegador (un 404 cada vez). El instalador instala `{}` (sin 404, mismo comportamiento) o tu propio objeto JSON vía `RATINGS_DATA_FILE` (claves `<movie|tv>_<tmdbId>`; upstream no documenta más el formato).
+- **Plugin de servidor opcional NativeSpotlight**: el addon consulta `/emby/NativeSpotlight/*`; con el plugin, ratings y premios se resuelven del lado servidor y su configuración pisa los interruptores `enable*`. Upstream no lo publica, así que el instalador solo lo detecta e informa (resumen, manifest, `--status`).
+
+Los ajustes que una versión dada del addon no tiene se saltean con un aviso en vez de fallar, así que un archivo de upstream más viejo o más nuevo igual se instala.
+
 ### Reviews.js
 
 `REVIEWS_PRIMARY_LANGUAGE`, `REVIEWS_SECONDARY_LANGUAGE`, `REVIEWS_MAX_REVIEWS`, `REVIEWS_PREVIEW_LENGTH`, `REVIEWS_EXPANDED_BY_DEFAULT`, `REVIEWS_SHOW_LANGUAGE_FLAGS`. `TMDB_API_KEY` se inyecta solo si la declaración ya existe en upstream.
@@ -636,6 +676,8 @@ Un addon aparte con su propio `CONFIG` (mismas claves, mismos interruptores por 
 - La lista de frases alemán→inglés/español es fija; la auditoría posterior avisa si upstream cambió su texto.
 - El chequeo de sesión del API proxy requiere nginx compilado con `--with-http_auth_request_module`; sin él, hay que quitar la línea `auth_request` y queda solo la barrera (blanda) de Referer/Origin — ver [docs/SECURITY-LAYERS.md](docs/SECURITY-LAYERS.md).
 - Calentar la caché de ratings para toda la biblioteca de antemano no está implementado.
+- `ratings-data.json` solo se instala (vacío o tu archivo), no se genera; el plugin de servidor NativeSpotlight solo se detecta, no se instala.
+- Spotlight.js lee una lista curada opcional en `/web/spotlight-items.txt` (un ID de ítem de Emby por línea, `#` para comentarios). El instalador descarga e instala por defecto la plantilla (solo comentarios) de upstream, así que no hay 404 de fábrica: dejala como está para la selección aleatoria normal, o agregá IDs de ítems para curar el Spotlight. (Si la borrás, la petición da `404` y Spotlight vuelve a la selección aleatoria — también inofensivo.)
 - Diseñado para Emby en Docker sobre TrueNAS SCALE; otros escenarios quedan fuera de alcance.
 
 ## Tests
@@ -644,11 +686,11 @@ Un addon aparte con su propio `CONFIG` (mismas claves, mismos interruptores por 
 ./tests/run_tests.sh
 ```
 
-Bash puro, sin dependencias extra. Los tests unitarios extraen las funciones **reales** del script (escaping, helpers de inyección, embebido de CSS, inyección del tema, reescritura del API proxy, cargador de configuración); los de integración generan los scripts reales de `rollback`/`reapply` y los corren contra stubs de `docker`/`curl`, ejercitando la máquina de estados de fallo. La CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) corre chequeo de sintaxis, shellcheck, la suite y una guarda contra datos de despliegue en archivos versionados. Detalles: [tests/README.md](tests/README.md).
+Bash puro, sin dependencias extra. Los tests unitarios extraen las funciones **reales** del script (escaping, helpers de inyección, embebido de CSS, inyección del tema, reescritura del API proxy incluida OMDb, cargador de configuración, detección de versión del CSS, ajustes opcionales, validación de `ratings-data.json`); los de integración generan los scripts reales de `rollback`/`reapply` y los corren contra stubs de `docker`/`curl`, ejercitando la máquina de estados de fallo y el freno de versión de Emby en reapply. La CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) corre chequeo de sintaxis, shellcheck, la suite y una guarda contra datos de despliegue en archivos versionados. Detalles: [tests/README.md](tests/README.md).
 
 ## Contribuir
 
-Issues y pull requests bienvenidos — sobre todo reportes de que esto funciona (o no) en versiones más nuevas de Emby con el error concreto, y tests de punta a punta del flujo de instalación (hoy la suite cubre las funciones y los scripts de recuperación, no las PHASE 1–9 completas). Leé [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) antes de tocar la lógica de inyección: casi todo lo que parece simplificable ya se probó y se revirtió por una razón documentada. El código y los comentarios del script están en inglés; los mensajes al usuario, por ahora, en español.
+Issues y pull requests bienvenidos — sobre todo reportes de que esto funciona (o no) en versiones más nuevas de Emby con el error concreto, y tests de punta a punta del flujo de instalación (hoy la suite cubre las funciones y los scripts de recuperación, no las PHASE 1–9 completas). Leé [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) antes de tocar la lógica de inyección: casi todo lo que parece simplificable ya se probó y se revirtió por una razón documentada. El código, los comentarios y los mensajes al usuario del script están en inglés; la documentación es bilingüe.
 
 ## Agradecimientos
 

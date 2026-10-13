@@ -167,5 +167,51 @@ assert_contains "$(cat "$SCRATCH/curl-bodies.txt")" 'color: red' "el CSS descarg
 assert_not_contains "$OUT" "skinmanager.js" "en modo customcss no toca skinmanager.js"
 rm -rf "$SCRATCH"
 
+# --- Case 7: Emby upgraded since the install -> reapply refuses -----------
+#     (the staged index.html/skinmanager.js belong to the old Emby version)
+
+suite "reapply: Emby version changed since the install -> refuses, touches nothing"
+SCRATCH="$(mktemp -d)"
+generate_reapply_script "$SCRATCH" >/dev/null
+setup_staged_and_installed "$SCRATCH"
+
+export STUB_CURL_STATUS=200 STUB_CURL_BODY='{"Version":"9.9.9.9"}'
+run_and_capture OUT CODE run_reapply "$SCRATCH"
+unset STUB_CURL_STATUS STUB_CURL_BODY
+assert_eq "$CODE" "1" "exit 1"
+assert_contains "$OUT" "Emby changed from 4.9.5.0 to 9.9.9.9" "says which versions differ"
+assert_contains "$OUT" "Run install-emby-custom.sh again" "points to the installer"
+for js in "${JS_NAMES_FOR_TEST[@]}"; do
+    assert_eq "$(cat "$SCRATCH/container/system/dashboard-ui/$js")" "INSTALLED-$js" "$js untouched"
+done
+rm -rf "$SCRATCH"
+
+# --- Case 8: same, with --force -> reapplies; ratings-data.json copied too --
+
+suite "reapply: --force overrides the version check; ratings-data.json is reapplied"
+SCRATCH="$(mktemp -d)"
+generate_reapply_script "$SCRATCH" >/dev/null
+setup_staged_and_installed "$SCRATCH"
+printf '{}\n' > "$SCRATCH/staged/ratings-data.json"
+
+export STUB_CURL_STATUS=200 STUB_CURL_BODY='{"Version":"9.9.9.9"}'
+run_and_capture OUT CODE bash "$SCRATCH/reapply.sh" --force
+unset STUB_CURL_STATUS STUB_CURL_BODY
+assert_eq "$CODE" "0" "exit 0"
+assert_contains "$OUT" "reapplying anyway (--force)" "warns that the check was overridden"
+assert_eq "$(cat "$SCRATCH/container/system/dashboard-ui/ratings-data.json" 2>/dev/null)" "{}" "ratings-data.json copied into the container"
+for js in "${JS_NAMES_FOR_TEST[@]}"; do
+    assert_eq "$(cat "$SCRATCH/container/system/dashboard-ui/$js")" "STAGED-$js" "$js reapplied"
+done
+rm -rf "$SCRATCH"
+
+suite "reapply: unknown argument -> usage, exit 1"
+SCRATCH="$(mktemp -d)"
+generate_reapply_script "$SCRATCH" >/dev/null
+run_and_capture OUT CODE bash "$SCRATCH/reapply.sh" --bogus
+assert_eq "$CODE" "1" "exit 1"
+assert_contains "$OUT" "usage:" "prints usage"
+rm -rf "$SCRATCH"
+
 print_summary
 exit $?

@@ -44,7 +44,8 @@ install-emby-custom.sh [options]
                           --container/--emby-url (or values already cached
                           in .emby-installer-state) and secrets/api.env
                           already created, or EMBY_API_KEY/TMDB_API_KEY (and
-                          optionally MDBLIST_API_KEY/KINOPOISK_API_KEY) as
+                          optionally MDBLIST_API_KEY/KINOPOISK_API_KEY/
+                          OMDB_API_KEY) as
                           environment variables to create it without the
                           wizard.
   --discover-only        Run only the container/BASE/URL detection, save it
@@ -112,7 +113,7 @@ DRY_RUN=0
 UNINSTALL=0
 STATUS_ONLY=0
 CHECK_UPDATES=0
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.2.0"
 
 for arg in "$@"; do
     case "$arg" in
@@ -191,7 +192,7 @@ INDEX_CONTAINER_PATH="$DASHBOARD_CONTAINER_DIR/index.html"
 # Emby version this script was tested against. If the detected server is
 # different, a warning is printed (it does not block) -- see README, section
 # "Compatibility and future versions".
-TESTED_EMBY_VERSION="4.10.0.40"
+TESTED_EMBY_VERSION="4.10.1.0"
 
 # How many installs (backup + log + manifest + hashes + rollback + reapply
 # of that run) are kept. The oldest ones are deleted at the end of each
@@ -229,6 +230,46 @@ CSS_NAME="Embymalism.css"
 # this is "I want THAT one"). CSS_URL is derived after the config file is
 # loaded (see "CONFIG FILE" below).
 CSS_PIN_REF=""
+
+# Upstream ships ONE Embymalism.css per Emby release: the one on main targets
+# the newest Emby it supports (its first line says so:
+# "/* ===== Embymalism_4.10.1.0 20260929 ===== */"), and the previous ones
+# are kept as Archive/Embymalism_<emby version>.css. With 1 (default), when
+# main's CSS is for a different Emby than the one detected in PHASE 2/9, the
+# archived CSS for the detected version is used instead (if upstream has
+# one; otherwise main is kept with a warning). 0 = always main. Ignored when
+# CSS_PIN_REF is set (a pin is an explicit choice).
+CSS_AUTO_MATCH_EMBY_VERSION="1"
+CSS_ARCHIVE_BASE_URL="https://raw.githubusercontent.com/v1rusnl/Embymalism/refs/heads/main/Archive"
+
+# Optional curated Spotlight list. Spotlight.js fetches this file (relative to
+# the web root, i.e. served at /web/spotlight-items.txt); if it is absent the
+# addon falls back to its normal random selection and the browser logs a
+# harmless 404. Upstream ships a comment-only template, so installing it by
+# default removes that 404 without changing behavior (no item IDs = still the
+# default selection). It is downloaded, staged, installed and re-applied like
+# the addons, but never edited. See docs/EMBY-API.md and the README.
+SPOTLIGHT_ITEMS_NAME="spotlight-items.txt"
+SPOTLIGHT_ITEMS_URL="https://raw.githubusercontent.com/v1rusnl/EmbySpotlight/refs/heads/main/spotlight-items.txt"
+SPOTLIGHT_ITEMS_CONTAINER_PATH="$DASHBOARD_CONTAINER_DIR/$SPOTLIGHT_ITEMS_NAME"
+
+# Optional precomputed ratings/awards for emby-ratings.js. Since its
+# 2026-09-30 rewrite the addon fetches ratings-data.json next to itself
+# (/web/ratings-data.json) and uses it before calling any API; when the file
+# is missing it falls back silently but retries every 60 s per browser
+# (a 404 each time). Upstream does not publish its format beyond what the
+# code reads: an object keyed "<movie|tv>_<tmdbId>". By default an empty
+# object '{}' is installed (same behavior, no 404s); RATINGS_DATA_FILE
+# (config file) points to your own JSON to install instead.
+RATINGS_DATA_NAME="ratings-data.json"
+RATINGS_DATA_FILE=""
+RATINGS_DATA_CONTAINER_PATH="$DASHBOARD_CONTAINER_DIR/$RATINGS_DATA_NAME"
+
+# Optional server plugin used by the new emby-ratings.js (it calls
+# /emby/NativeSpotlight/Config and /emby/NativeSpotlight/<provider>; when
+# present it resolves ratings/awards server-side). It is not published
+# upstream, so the installer only detects and reports it (PHASE 4/9).
+NATIVE_SPOTLIGHT_CONFIG_PATH="/emby/NativeSpotlight/Config"
 
 # --- Embymalism as a "Theme" combo entry (not as CustomCss) --------------
 #
@@ -316,11 +357,11 @@ CORS_PROXY_URL=""
 
 # API proxy with shared cache and server-side keys (nginx, see
 # deploy/nginx/etc/nginx/snippets/emby-api-proxy.conf). With a value: in the addons the
-# bases https://api.mdblist.com/, https://api.themoviedb.org/ and
-# https://kinopoiskapiunofficial.tech/ are rewritten to API_PROXY_URL +
-# mdblist/ | tmdb/ | kinopoisk/, and instead of the real TMDB/MDBList/
-# Kinopoisk keys, API_KEY_PLACEHOLDER is injected (nginx discards it and
-# adds the real key). Result: the keys never travel to the browser and the
+# bases https://api.mdblist.com/, https://api.themoviedb.org/,
+# https://kinopoiskapiunofficial.tech/ and https://www.omdbapi.com/ are
+# rewritten to API_PROXY_URL + mdblist/ | tmdb/ | kinopoisk/ | omdb/, and
+# instead of the real TMDB/MDBList/Kinopoisk/OMDb keys, API_KEY_PLACEHOLDER
+# is injected (nginx discards it and adds the real key). Result: the keys never travel to the browser and the
 # responses are cached for every user/device. Empty = previous behavior
 # (direct calls with the keys embedded in the JS).
 # Set it in the config file, e.g. "https://emby.example.com/api-proxy/".
@@ -334,6 +375,7 @@ API_PROXY_RESOLVE_IP=""
 API_BASE_MDBLIST="https://api.mdblist.com/"
 API_BASE_TMDB="https://api.themoviedb.org/"
 API_BASE_KINOPOISK="https://kinopoiskapiunofficial.tech/"
+API_BASE_OMDB="https://www.omdbapi.com/"
 
 # Reviews.js language/limits (defaults; override in the config file).
 REVIEWS_PRIMARY_LANGUAGE="en-US"
@@ -383,6 +425,13 @@ SPOTLIGHT_ENABLE_ANI_LIST="true"
 # (it ships with the 3 API keys empty). They are not secrets except the
 # keys, which are taken from secrets/api.env just like in Spotlight.
 RATINGS_CACHE_TTL_HOURS="168"
+# Added upstream on 2026-09-30 (only applied if the downloaded addon has
+# them; an older addon without them is installed with a warning).
+# Awards = Oscar and Emmy wins, via OMDb: they only show with OMDB_API_KEY in
+# secrets/api.env (or the optional NativeSpotlight server plugin).
+# Custom ratings = master switch for the external ratings (IMDb, RT, ...).
+RATINGS_ENABLE_AWARDS="true"
+RATINGS_ENABLE_CUSTOM_RATINGS="true"
 RATINGS_ENABLE_IMDB="true"
 RATINGS_ENABLE_TMDB="true"
 RATINGS_ENABLE_ROTTEN_TOMATOES="true"
@@ -416,7 +465,7 @@ EMBY_BRANDING_POST_PATH="/System/Configuration/branding"
 CONFIG_KEYS=(
     EMBY_CONTAINER EMBY_URL
     BACKUP_RETENTION_COUNT
-    CSS_PIN_REF THEME_SET_AS_DEFAULT
+    CSS_PIN_REF CSS_AUTO_MATCH_EMBY_VERSION THEME_SET_AS_DEFAULT
     ELSEWHERE_DEFAULT_REGION ELSEWHERE_UI_LANGUAGE
     ELSEWHERE_DEFAULT_PROVIDERS ELSEWHERE_IGNORE_PROVIDERS
     CORS_PROXY_URL API_PROXY_URL API_PROXY_RESOLVE_IP
@@ -433,14 +482,15 @@ CONFIG_KEYS=(
     SPOTLIGHT_ENABLE_METACRITIC SPOTLIGHT_ENABLE_TRAKT SPOTLIGHT_ENABLE_LETTERBOXD
     SPOTLIGHT_ENABLE_ROGER_EBERT SPOTLIGHT_ENABLE_ALLOCINE SPOTLIGHT_ENABLE_KINOPOISK
     SPOTLIGHT_ENABLE_MY_ANIME_LIST SPOTLIGHT_ENABLE_ANI_LIST
-    RATINGS_CACHE_TTL_HOURS
+    RATINGS_CACHE_TTL_HOURS RATINGS_ENABLE_AWARDS RATINGS_ENABLE_CUSTOM_RATINGS
+    RATINGS_DATA_FILE
     RATINGS_ENABLE_IMDB RATINGS_ENABLE_TMDB RATINGS_ENABLE_ROTTEN_TOMATOES
     RATINGS_ENABLE_METACRITIC RATINGS_ENABLE_TRAKT RATINGS_ENABLE_LETTERBOXD
     RATINGS_ENABLE_ROGER_EBERT RATINGS_ENABLE_ALLOCINE RATINGS_ENABLE_KINOPOISK
     RATINGS_ENABLE_MY_ANIME_LIST RATINGS_ENABLE_ANI_LIST
 )
 # Type per key (everything else is free text without shell metacharacters).
-CONFIG_BOOL_KEYS=" THEME_SET_AS_DEFAULT REVIEWS_EXPANDED_BY_DEFAULT REVIEWS_SHOW_LANGUAGE_FLAGS SPOTLIGHT_ENABLE_VIDEO_BACKDROP SPOTLIGHT_START_MUTED SPOTLIGHT_WAIT_FOR_TRAILER_TO_END SPOTLIGHT_ENABLE_MOBILE_VIDEO SPOTLIGHT_ENABLE_SPONSOR_BLOCK SPOTLIGHT_ENABLE_CUSTOM_RATINGS SPOTLIGHT_ENABLE_IMDB SPOTLIGHT_ENABLE_TMDB SPOTLIGHT_ENABLE_ROTTEN_TOMATOES SPOTLIGHT_ENABLE_METACRITIC SPOTLIGHT_ENABLE_TRAKT SPOTLIGHT_ENABLE_LETTERBOXD SPOTLIGHT_ENABLE_ROGER_EBERT SPOTLIGHT_ENABLE_ALLOCINE SPOTLIGHT_ENABLE_KINOPOISK SPOTLIGHT_ENABLE_MY_ANIME_LIST SPOTLIGHT_ENABLE_ANI_LIST RATINGS_ENABLE_IMDB RATINGS_ENABLE_TMDB RATINGS_ENABLE_ROTTEN_TOMATOES RATINGS_ENABLE_METACRITIC RATINGS_ENABLE_TRAKT RATINGS_ENABLE_LETTERBOXD RATINGS_ENABLE_ROGER_EBERT RATINGS_ENABLE_ALLOCINE RATINGS_ENABLE_KINOPOISK RATINGS_ENABLE_MY_ANIME_LIST RATINGS_ENABLE_ANI_LIST "
+CONFIG_BOOL_KEYS=" THEME_SET_AS_DEFAULT CSS_AUTO_MATCH_EMBY_VERSION RATINGS_ENABLE_AWARDS RATINGS_ENABLE_CUSTOM_RATINGS REVIEWS_EXPANDED_BY_DEFAULT REVIEWS_SHOW_LANGUAGE_FLAGS SPOTLIGHT_ENABLE_VIDEO_BACKDROP SPOTLIGHT_START_MUTED SPOTLIGHT_WAIT_FOR_TRAILER_TO_END SPOTLIGHT_ENABLE_MOBILE_VIDEO SPOTLIGHT_ENABLE_SPONSOR_BLOCK SPOTLIGHT_ENABLE_CUSTOM_RATINGS SPOTLIGHT_ENABLE_IMDB SPOTLIGHT_ENABLE_TMDB SPOTLIGHT_ENABLE_ROTTEN_TOMATOES SPOTLIGHT_ENABLE_METACRITIC SPOTLIGHT_ENABLE_TRAKT SPOTLIGHT_ENABLE_LETTERBOXD SPOTLIGHT_ENABLE_ROGER_EBERT SPOTLIGHT_ENABLE_ALLOCINE SPOTLIGHT_ENABLE_KINOPOISK SPOTLIGHT_ENABLE_MY_ANIME_LIST SPOTLIGHT_ENABLE_ANI_LIST RATINGS_ENABLE_IMDB RATINGS_ENABLE_TMDB RATINGS_ENABLE_ROTTEN_TOMATOES RATINGS_ENABLE_METACRITIC RATINGS_ENABLE_TRAKT RATINGS_ENABLE_LETTERBOXD RATINGS_ENABLE_ROGER_EBERT RATINGS_ENABLE_ALLOCINE RATINGS_ENABLE_KINOPOISK RATINGS_ENABLE_MY_ANIME_LIST RATINGS_ENABLE_ANI_LIST "
 CONFIG_INT_KEYS=" BACKUP_RETENTION_COUNT REVIEWS_MAX_REVIEWS REVIEWS_PREVIEW_LENGTH SPOTLIGHT_LIMIT SPOTLIGHT_AUTOPLAY_INTERVAL SPOTLIGHT_CACHE_TTL_HOURS RATINGS_CACHE_TTL_HOURS "
 CONFIG_URL_SLASH_KEYS=" CORS_PROXY_URL API_PROXY_URL "
 
@@ -461,7 +511,7 @@ config_validate_value() {
     esac
     if [[ "$CONFIG_BOOL_KEYS" == *" $key "* ]]; then
         case "$key" in
-            THEME_SET_AS_DEFAULT)
+            THEME_SET_AS_DEFAULT|CSS_AUTO_MATCH_EMBY_VERSION)
                 [[ "$value" =~ ^[01]$ ]] || { echo "must be 0 or 1"; return 1; } ;;
             *)
                 [[ "$value" =~ ^(true|false)$ ]] || { echo "must be true or false"; return 1; } ;;
@@ -476,6 +526,9 @@ config_validate_value() {
             EMBY_URL)
                 [ -z "$value" ] || [[ "$value" =~ ^https?://[^[:space:]/]+(:[0-9]+)?$ ]] \
                     || { echo "must be empty or http(s)://host[:port] with no trailing path"; return 1; } ;;
+            RATINGS_DATA_FILE)
+                [ -z "$value" ] || [[ "$value" =~ ^/[^[:space:]]+\.json$ ]] \
+                    || { echo "must be empty or an absolute path to a .json file (no spaces)"; return 1; } ;;
             API_PROXY_RESOLVE_IP)
                 [ -z "$value" ] || [[ "$value" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] \
                     || { echo "must be empty or an IPv4 address"; return 1; } ;;
@@ -675,6 +728,20 @@ rollback() {
             [ "$rc" = "1" ] && had_failure=1
         fi
     done
+
+    if restore_or_remove_file "$CONTAINER" "$BACKUP_DIR/$SPOTLIGHT_ITEMS_NAME" "$SPOTLIGHT_ITEMS_CONTAINER_PATH" "$SPOTLIGHT_ITEMS_NAME"; then
+        had_success=1
+    else
+        rc=$?
+        [ "$rc" = "1" ] && had_failure=1
+    fi
+
+    if restore_or_remove_file "$CONTAINER" "$BACKUP_DIR/$RATINGS_DATA_NAME" "$RATINGS_DATA_CONTAINER_PATH" "$RATINGS_DATA_NAME"; then
+        had_success=1
+    else
+        rc=$?
+        [ "$rc" = "1" ] && had_failure=1
+    fi
 
     echo "Restoring theme $THEME_NAME (skinmanager.js + theme.css)..."
     if restore_or_warn_file "$CONTAINER" "$BACKUP_DIR/skinmanager.js" "$SKINMANAGER_CONTAINER_PATH" "skinmanager.js"; then
@@ -1055,7 +1122,7 @@ if [ "$PRINT_CONFIG" = "1" ]; then
             *) printf '%s=%q\n' "$key" "${!key}" ;;
         esac
     done
-    echo "# Derived: CSS_URL=$CSS_URL"
+    echo "# Derived: CSS_URL=$CSS_URL (may switch to $CSS_ARCHIVE_BASE_URL/Embymalism_<your Emby>.css when CSS_AUTO_MATCH_EMBY_VERSION=1)"
     exit 0
 fi
 
@@ -1075,7 +1142,7 @@ echo "Log (temporary, until we know where to persist it): $BOOTSTRAP_LOG"
 
 section "PHASE 1/9 - Dependencies"
 
-for cmd in bash docker curl grep sed awk sha256sum wc stat date mktemp flock tar; do
+for cmd in bash docker curl grep sed awk sha256sum wc stat date mktemp flock tar tail truncate; do
     require_cmd "$cmd"
 done
 ok "Required dependencies present."
@@ -1335,6 +1402,21 @@ step "Detecting Emby URL"
 
 EMBY_URL=""
 
+# Extra explanation for an unreachable Emby URL when the container sits on a
+# macvlan/ipvlan network: by design the Docker host cannot talk to such a
+# container through its own parent interface, so the container's IP never
+# answers from here even though every other machine reaches it.
+emby_url_hint() {
+    local net driver
+    net="$(docker inspect "$CONTAINER" -f '{{.HostConfig.NetworkMode}}' 2>/dev/null || true)"
+    driver="$(docker network inspect "$net" -f '{{.Driver}}' 2>/dev/null || true)"
+    case "$driver" in
+        macvlan|ipvlan)
+            printf ' The container is on the %s network "%s": this host cannot reach its IP directly (a %s limitation). Use a URL that reaches Emby another way, e.g. through your reverse proxy (--emby-url=https://emby.example.com or EMBY_URL in the config file), or add a %s shim interface on this host.' \
+                "$driver" "$net" "$driver" "$driver" ;;
+    esac
+}
+
 if [ -n "$OPT_EMBY_URL" ]; then
 
     STATUS="$(
@@ -1346,7 +1428,7 @@ if [ -n "$OPT_EMBY_URL" ]; then
         EMBY_URL="$OPT_EMBY_URL"
         ok "URL given by --emby-url confirmed: $EMBY_URL"
     else
-        die_precheck "The URL given by --emby-url ($OPT_EMBY_URL) did not respond (HTTP ${STATUS:-no response})."
+        die_precheck "The URL given by --emby-url ($OPT_EMBY_URL) did not respond (HTTP ${STATUS:-no response}).$(emby_url_hint)"
     fi
 
 else
@@ -1385,13 +1467,13 @@ else
     fi
 
     if [ -z "$EMBY_URL" ] && [ "$SILENT_MODE" = "1" ]; then
-        die_precheck "--silent requires --emby-url=URL (could not auto-detect, and no cached URL responded)."
+        die_precheck "--silent requires --emby-url=URL (could not auto-detect, and no cached URL responded).$(emby_url_hint)"
     fi
 
     # 3) if none of the above worked, ask (typical with host networking,
     #    macvlan, or a static IP -- the published port is not enough to know).
     while [ -z "$EMBY_URL" ]; do
-        warn "Could not automatically confirm the Emby URL."
+        warn "Could not automatically confirm the Emby URL.$(emby_url_hint)"
         TYPED_URL=""
         read -rp "Emby URL (e.g. http://192.168.1.10:8096): " TYPED_URL \
             || die_precheck "No answer received (running without an interactive terminal?) and the Emby URL could not be confirmed."
@@ -1494,6 +1576,7 @@ elif [ "$SILENT_MODE" = "1" ]; then
         printf 'TMDB_API_KEY=%s\n'      "$(shell_single_quote "${TMDB_API_KEY}")"
         printf 'MDBLIST_API_KEY=%s\n'   "$(shell_single_quote "${MDBLIST_API_KEY:-}")"
         printf 'KINOPOISK_API_KEY=%s\n' "$(shell_single_quote "${KINOPOISK_API_KEY:-}")"
+        printf 'OMDB_API_KEY=%s\n'      "$(shell_single_quote "${OMDB_API_KEY:-}")"
     } > "$SECRETS_TMP"
 
     mv "$SECRETS_TMP" "$SECRETS_FILE"
@@ -1532,12 +1615,16 @@ else
     read -rsp "KINOPOISK_API_KEY (optional, Enter to skip): " WIZARD_KINOPOISK_API_KEY
     echo
 
+    read -rsp "OMDB_API_KEY (optional, Oscar/Emmy awards in emby-ratings.js; Enter to skip): " WIZARD_OMDB_API_KEY
+    echo
+
     echo
     echo "Summary (lengths only, never the values):"
     echo "  EMBY_API_KEY      : $(mask_len "$WIZARD_EMBY_API_KEY")"
     echo "  TMDB_API_KEY      : $(mask_len "$WIZARD_TMDB_API_KEY")"
     echo "  MDBLIST_API_KEY   : $(mask_len "$WIZARD_MDBLIST_API_KEY")"
     echo "  KINOPOISK_API_KEY : $(mask_len "$WIZARD_KINOPOISK_API_KEY")"
+    echo "  OMDB_API_KEY      : $(mask_len "$WIZARD_OMDB_API_KEY")"
     echo
 
     CONFIRM=""
@@ -1560,12 +1647,13 @@ else
         printf 'TMDB_API_KEY=%s\n'      "$(shell_single_quote "$WIZARD_TMDB_API_KEY")"
         printf 'MDBLIST_API_KEY=%s\n'   "$(shell_single_quote "$WIZARD_MDBLIST_API_KEY")"
         printf 'KINOPOISK_API_KEY=%s\n' "$(shell_single_quote "$WIZARD_KINOPOISK_API_KEY")"
+        printf 'OMDB_API_KEY=%s\n'      "$(shell_single_quote "$WIZARD_OMDB_API_KEY")"
     } > "$SECRETS_TMP"
 
     mv "$SECRETS_TMP" "$SECRETS_FILE"
     chmod 600 "$SECRETS_FILE"
 
-    unset WIZARD_EMBY_API_KEY WIZARD_TMDB_API_KEY WIZARD_MDBLIST_API_KEY WIZARD_KINOPOISK_API_KEY
+    unset WIZARD_EMBY_API_KEY WIZARD_TMDB_API_KEY WIZARD_MDBLIST_API_KEY WIZARD_KINOPOISK_API_KEY WIZARD_OMDB_API_KEY
 
     echo
     ok "Credentials saved to $SECRETS_FILE (permissions 600)."
@@ -1599,6 +1687,7 @@ EMBY_API_KEY="${EMBY_API_KEY:-}"
 TMDB_API_KEY="${TMDB_API_KEY:-}"
 MDBLIST_API_KEY="${MDBLIST_API_KEY:-}"
 KINOPOISK_API_KEY="${KINOPOISK_API_KEY:-}"
+OMDB_API_KEY="${OMDB_API_KEY:-}"
 
 [ -n "$EMBY_API_KEY" ] || die_precheck "EMBY_API_KEY is empty in $SECRETS_FILE."
 [ -n "$TMDB_API_KEY" ] || die_precheck "TMDB_API_KEY is empty in $SECRETS_FILE."
@@ -1614,6 +1703,11 @@ if [ -n "$KINOPOISK_API_KEY" ]; then
     ok "KINOPOISK_API_KEY : $(mask_len "$KINOPOISK_API_KEY")"
 else
     warn "KINOPOISK_API_KEY not configured (optional)."
+fi
+if [ -n "$OMDB_API_KEY" ]; then
+    ok "OMDB_API_KEY      : $(mask_len "$OMDB_API_KEY")"
+else
+    warn "OMDB_API_KEY not configured (optional): emby-ratings.js will show no Oscar/Emmy awards. Add OMDB_API_KEY='...' to $SECRETS_FILE to enable them."
 fi
 
 # curl config file (-K) carrying the X-Emby-Token header, so that
@@ -1673,6 +1767,48 @@ fi
 rm -f "$EMBY_BRANDING_TMP"
 ok "EMBY_API_KEY valid (Branding/Configuration reachable)."
 
+# OMDb is optional (awards only): a rejected key warns instead of aborting,
+# like the other optional providers, and the awards row simply stays empty.
+OMDB_KEY_STATUS="not_configured"
+if [ -n "$OMDB_API_KEY" ]; then
+    step "OMDb"
+    OMDB_TMP="$(mktemp "$CUSTOM_ROOT/.omdb-response.XXXXXX.tmp")"
+    OMDB_STATUS="$(
+        curl --silent --show-error --location --get \
+            --connect-timeout 10 --max-time 30 \
+            --data-urlencode "i=tt0111161" \
+            --data-urlencode "apikey=$OMDB_API_KEY" \
+            --output "$OMDB_TMP" --write-out '%{http_code}' \
+            "$API_BASE_OMDB" 2>/dev/null || true
+    )"
+    if [ "$OMDB_STATUS" = "200" ] && grep -qE '"Response"[[:space:]]*:[[:space:]]*"True"' "$OMDB_TMP"; then
+        OMDB_KEY_STATUS="valid"
+        ok "OMDB_API_KEY valid."
+    else
+        OMDB_KEY_STATUS="rejected"
+        warn "OMDb rejected OMDB_API_KEY (HTTP ${OMDB_STATUS:-no response}). Response: $(http_body_snippet "$OMDB_TMP")"
+        warn "Installing anyway; Oscar/Emmy awards will not show until the key works (free keys need e-mail activation)."
+    fi
+    rm -f "$OMDB_TMP"
+fi
+
+# Optional server plugin of the new emby-ratings.js: report only (see
+# NATIVE_SPOTLIGHT_CONFIG_PATH). 200 = installed; anything else = absent.
+step "NativeSpotlight server plugin (optional, used by emby-ratings.js)"
+NATIVE_SPOTLIGHT_STATUS="$(
+    curl --silent --location --connect-timeout 10 --max-time 20 \
+        -K "$EMBY_TOKEN_CURL_CONFIG" --header "Accept: application/json" \
+        --output /dev/null --write-out '%{http_code}' \
+        "$EMBY_URL$NATIVE_SPOTLIGHT_CONFIG_PATH" 2>/dev/null || true
+)"
+if [ "$NATIVE_SPOTLIGHT_STATUS" = "200" ]; then
+    NATIVE_SPOTLIGHT_PLUGIN="present"
+    ok "Installed: emby-ratings.js will take ratings/awards (and its enable* switches) from the plugin's settings."
+else
+    NATIVE_SPOTLIGHT_PLUGIN="absent"
+    ok "Not installed (HTTP ${NATIVE_SPOTLIGHT_STATUS:-no response}): emby-ratings.js works standalone with the keys below."
+fi
+
 # ==============================================================================
 # 10. ADDON AND CSS DOWNLOAD
 # ==============================================================================
@@ -1706,6 +1842,15 @@ if [ "$STATUS_ONLY" = "1" ]; then
     status_row "index.html" "$INDEX_CONTAINER_PATH"
     status_row "skinmanager.js" "$SKINMANAGER_CONTAINER_PATH"
     status_row "theme.css" "$THEME_CSS_CONTAINER_PATH"
+    status_row "$SPOTLIGHT_ITEMS_NAME" "$SPOTLIGHT_ITEMS_CONTAINER_PATH"
+    status_row "$RATINGS_DATA_NAME" "$RATINGS_DATA_CONTAINER_PATH"
+    STATUS_INSTALLED_EMBY="$(grep -o '"emby_server_version": "[^"]*"' "$STATUS_MANIFEST" | cut -d'"' -f4 || true)"
+    if [ -z "$STATUS_INSTALLED_EMBY" ] || [ "$STATUS_INSTALLED_EMBY" = "$EMBY_SERVER_VERSION" ]; then
+        printf '  %-22s OK (%s)\n' "Emby version" "$EMBY_SERVER_VERSION"
+    else
+        printf '  %-22s CHANGED (%s now, %s at install time: re-run the installer, not reapply)\n' "Emby version" "$EMBY_SERVER_VERSION" "$STATUS_INSTALLED_EMBY"; STATUS_DRIFT=1
+    fi
+    printf '  %-22s %s\n' "NativeSpotlight plugin" "$NATIVE_SPOTLIGHT_PLUGIN"
     if docker inspect "$CONTAINER" -f '{{.Id}}' 2>/dev/null | grep -qF "$(grep -o '"container_id": "[0-9a-f]*"' "$STATUS_MANIFEST" | cut -d'"' -f4)"; then
         printf '  %-22s OK (same instance as at install time)\n' "container id"
     else
@@ -1734,7 +1879,11 @@ if [ "$STATUS_ONLY" = "1" ]; then
         ok "Everything is as installed on $STATUS_TS."
         exit "$EXIT_OK"
     else
-        warn "Drift detected: run $CUSTOM_ROOT/reapply-$STATUS_TS.sh (or re-install) to restore."
+        if [ -n "$STATUS_INSTALLED_EMBY" ] && [ "$STATUS_INSTALLED_EMBY" != "$EMBY_SERVER_VERSION" ]; then
+            warn "Drift detected and Emby was upgraded: re-run this installer (the staged index.html/skinmanager.js were built for $STATUS_INSTALLED_EMBY, so reapply refuses them)."
+        else
+            warn "Drift detected: run $CUSTOM_ROOT/reapply-$STATUS_TS.sh (or re-install) to restore."
+        fi
         exit "$EXIT_FAILED"
     fi
 fi
@@ -1764,6 +1913,13 @@ download_file() {
     fi
 
     mv "$tmp" "$dest"
+}
+
+# Emby version an Embymalism CSS was made for, from its first-line header
+# ("/* ===== Embymalism_4.10.1.0 20260929 ===== */"). Prints nothing if absent.
+css_header_emby_version() {
+    { head -c 300 "$1" 2>/dev/null | grep -oE 'Embymalism_[0-9]+(\.[0-9]+)+' || true; } \
+        | head -n1 | sed 's/^Embymalism_//'
 }
 
 rm -f "$HASHES_FILE"
@@ -1828,15 +1984,60 @@ for i in "${!JS_NAMES[@]}"; do
     ok "Downloaded ($SIZE bytes, sha256 $HASH)"
 done
 
-step "$CSS_NAME (audit only, not installed as a file)"
+step "$CSS_NAME"
 CSS_SOURCE="$SOURCE_DIR/$CSS_NAME.original"
 download_file "$CSS_URL" "$CSS_SOURCE" "$CSS_NAME"
 CSS_SIZE="$(wc -c < "$CSS_SOURCE" | tr -d ' ')"
 [ "$CSS_SIZE" -gt 0 ] || die_precheck "$CSS_NAME was downloaded empty."
+
+# Which Emby the CSS was made for (first-line header) vs the detected Emby.
+# CSS_SOURCE_KIND records where the installed CSS came from: main, archive
+# (Archive/Embymalism_<version>.css) or pin (CSS_PIN_REF).
+CSS_EMBY_VERSION="$(css_header_emby_version "$CSS_SOURCE")"
+CSS_SOURCE_KIND="main"
+[ -n "$CSS_PIN_REF" ] && CSS_SOURCE_KIND="pin"
+if [ "$EMBY_SERVER_VERSION" = "unknown" ] || [ -z "$CSS_EMBY_VERSION" ]; then
+    warn "Cannot match $CSS_NAME to your Emby (Emby: $EMBY_SERVER_VERSION, CSS header: ${CSS_EMBY_VERSION:-not found}); using it as downloaded."
+elif [ "$CSS_EMBY_VERSION" = "$EMBY_SERVER_VERSION" ]; then
+    ok "$CSS_NAME is made for Emby $CSS_EMBY_VERSION, the same as yours."
+elif [ -n "$CSS_PIN_REF" ]; then
+    warn "$CSS_NAME pinned to $CSS_PIN_REF is made for Emby $CSS_EMBY_VERSION, yours is $EMBY_SERVER_VERSION (pin respected)."
+elif [ "$CSS_AUTO_MATCH_EMBY_VERSION" != "1" ]; then
+    warn "$CSS_NAME on main is made for Emby $CSS_EMBY_VERSION, yours is $EMBY_SERVER_VERSION (CSS_AUTO_MATCH_EMBY_VERSION=0: using main anyway)."
+else
+    CSS_ARCHIVE_URL="$CSS_ARCHIVE_BASE_URL/Embymalism_${EMBY_SERVER_VERSION}.css"
+    CSS_ARCHIVE_TMP="$CSS_SOURCE.archive.tmp"
+    CSS_ARCHIVE_HTTP="$(
+        curl --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 180 \
+            --output "$CSS_ARCHIVE_TMP" --write-out '%{http_code}' \
+            "$CSS_ARCHIVE_URL" 2>/dev/null || true
+    )"
+    if [ "$CSS_ARCHIVE_HTTP" = "200" ] && [ -s "$CSS_ARCHIVE_TMP" ] \
+        && [ "$(css_header_emby_version "$CSS_ARCHIVE_TMP")" = "$EMBY_SERVER_VERSION" ]; then
+        mv "$CSS_ARCHIVE_TMP" "$CSS_SOURCE"
+        CSS_URL="$CSS_ARCHIVE_URL"
+        CSS_SOURCE_KIND="archive"
+        CSS_SIZE="$(wc -c < "$CSS_SOURCE" | tr -d ' ')"
+        warn "$CSS_NAME on main is made for Emby $CSS_EMBY_VERSION, yours is $EMBY_SERVER_VERSION: using upstream's archived CSS for your version instead ($CSS_ARCHIVE_URL)."
+        CSS_EMBY_VERSION="$EMBY_SERVER_VERSION"
+    else
+        rm -f "$CSS_ARCHIVE_TMP"
+        warn "$CSS_NAME on main is made for Emby $CSS_EMBY_VERSION, yours is $EMBY_SERVER_VERSION, and upstream has no archived CSS for $EMBY_SERVER_VERSION (HTTP ${CSS_ARCHIVE_HTTP:-no response}): using main; some styles may not fit."
+    fi
+fi
 CSS_HASH="$(sha256sum "$CSS_SOURCE" | awk '{print $1}')"
 echo "$CSS_HASH  $CSS_NAME.original" >> "$HASHES_FILE"
 check_upstream_change "$CSS_NAME" "$CSS_HASH"
 ok "Downloaded ($CSS_SIZE bytes, sha256 $CSS_HASH)"
+
+step "$SPOTLIGHT_ITEMS_NAME (curated Spotlight list, static asset)"
+SPOTLIGHT_ITEMS_SOURCE="$SOURCE_DIR/$SPOTLIGHT_ITEMS_NAME.original"
+download_file "$SPOTLIGHT_ITEMS_URL" "$SPOTLIGHT_ITEMS_SOURCE" "$SPOTLIGHT_ITEMS_NAME"
+SPOTLIGHT_ITEMS_SIZE="$(wc -c < "$SPOTLIGHT_ITEMS_SOURCE" | tr -d ' ')"
+SPOTLIGHT_ITEMS_HASH="$(sha256sum "$SPOTLIGHT_ITEMS_SOURCE" | awk '{print $1}')"
+echo "$SPOTLIGHT_ITEMS_HASH  $SPOTLIGHT_ITEMS_NAME.original" >> "$HASHES_FILE"
+check_upstream_change "$SPOTLIGHT_ITEMS_NAME" "$SPOTLIGHT_ITEMS_HASH"
+ok "Downloaded ($SPOTLIGHT_ITEMS_SIZE bytes, sha256 $SPOTLIGHT_ITEMS_HASH)"
 
 # --check-updates: report and stop here. Nothing was edited or installed,
 # and the known-hashes baseline is left exactly as it was.
@@ -2129,7 +2330,7 @@ rewrite_api_base() {
 # argument (they do not show up in 'ps').
 assert_no_third_party_keys() {
     local file="$1" key name
-    for name in TMDB_API_KEY MDBLIST_API_KEY KINOPOISK_API_KEY; do
+    for name in TMDB_API_KEY MDBLIST_API_KEY KINOPOISK_API_KEY OMDB_API_KEY; do
         key="${!name:-}"
         [ -n "$key" ] || continue
         if grep -qF -f <(printf '%s\n' "$key") "$file"; then
@@ -2279,6 +2480,21 @@ set_or_die_property_raw() {
 
     grep -qE "^[[:space:]]*${name}[[:space:]]*:[[:space:]]*${value}[[:space:]]*,?" "$file" \
         || die_precheck "$name in $(basename "$file") did not end up as $value after editing."
+}
+
+# Same as the two above, for properties that only newer upstream versions
+# have: if the property is absent, nothing is touched and 1 is returned (the
+# caller warns); if present, it is set exactly like set_or_die_property_*.
+set_if_property_string() {
+    local file="$1" name="$2" value="$3"
+    [ "$(count_property_decl "$file" "$name")" = "0" ] && return 1
+    set_or_die_property_string "$file" "$name" "$value"
+}
+
+set_if_property_raw() {
+    local file="$1" name="$2" value="$3"
+    [ "$(count_property_decl "$file" "$name")" = "0" ] && return 1
+    set_or_die_property_raw "$file" "$name" "$value"
 }
 
 # --- emby-elsewhere.js UI language (German -> Spanish / English, or none) --
@@ -2441,6 +2657,39 @@ for JS in "${JS_NAMES[@]}"; do
 done
 ok "6 addons copied to $DASHBOARD_UI (staging)."
 
+# Stage the curated Spotlight list (static, not edited).
+cp "$SPOTLIGHT_ITEMS_SOURCE" "$DASHBOARD_UI/$SPOTLIGHT_ITEMS_NAME"
+chmod 644 "$DASHBOARD_UI/$SPOTLIGHT_ITEMS_NAME"
+ok "$SPOTLIGHT_ITEMS_NAME copied to $DASHBOARD_UI (staging)."
+
+# Stage ratings-data.json for emby-ratings.js: your own file if
+# RATINGS_DATA_FILE is set (it must be a JSON object), otherwise '{}'.
+json_is_object() {
+    if [ "$HAS_JQ" = "1" ]; then
+        jq -e 'type == "object"' "$1" >/dev/null 2>&1
+    elif python3 -c '' >/dev/null 2>&1; then
+        python3 -c 'import json,sys; sys.exit(0 if isinstance(json.load(open(sys.argv[1])), dict) else 1)' "$1" 2>/dev/null
+    else
+        # Weak fallback without a JSON parser: it must at least start with '{'.
+        [ "$(tr -d '[:space:]' < "$1" | head -c 1)" = "{" ]
+    fi
+}
+RATINGS_DATA_STAGED="$DASHBOARD_UI/$RATINGS_DATA_NAME"
+if [ -n "$RATINGS_DATA_FILE" ]; then
+    [ -r "$RATINGS_DATA_FILE" ] || die_precheck "RATINGS_DATA_FILE=$RATINGS_DATA_FILE is not readable."
+    json_is_object "$RATINGS_DATA_FILE" \
+        || die_precheck "RATINGS_DATA_FILE=$RATINGS_DATA_FILE is not a JSON object (emby-ratings.js ignores anything else)."
+    cp "$RATINGS_DATA_FILE" "$RATINGS_DATA_STAGED"
+    RATINGS_DATA_KIND="custom"
+    ok "$RATINGS_DATA_NAME staged from $RATINGS_DATA_FILE ($(wc -c < "$RATINGS_DATA_STAGED" | tr -d ' ') bytes)."
+else
+    printf '{}\n' > "$RATINGS_DATA_STAGED"
+    RATINGS_DATA_KIND="empty"
+    ok "$RATINGS_DATA_NAME staged as an empty object (no precomputed data; avoids the addon's 404 retries)."
+fi
+chmod 644 "$RATINGS_DATA_STAGED"
+RATINGS_DATA_HASH="$(sha256sum "$RATINGS_DATA_STAGED" | awk '{print $1}')"
+
 if [ -n "$API_PROXY_URL" ]; then
     step "API proxy (smoke test against $API_PROXY_URL)"
     # End-to-end probe: TMDB /3/configuration requires a key; if the proxy
@@ -2473,6 +2722,27 @@ if [ -n "$API_PROXY_URL" ]; then
         warn "Installing anyway with the proxy URLs; TMDB/MDBList/Kinopoisk ratings will not show until the proxy works (check nginx: snippets/emby-api-proxy.conf, emby-api-keys.conf)."
     fi
     rm -f "$API_SMOKE_TMP"
+
+    # Same probe for OMDb (awards), only when a key is configured: nginx must
+    # have the same key (deploy/nginx/render-keys.sh) and the omdb/ location.
+    if [ -n "$OMDB_API_KEY" ]; then
+        API_SMOKE_TMP="$(mktemp "$CUSTOM_ROOT/.api-smoke.XXXXXX.tmp")"
+        API_SMOKE_STATUS="$(
+            curl --silent --show-error --location \
+                --connect-timeout 10 --max-time 20 \
+                "${API_SMOKE_RESOLVE[@]}" \
+                --header "Referer: $EMBY_URL/web/index.html" \
+                --output "$API_SMOKE_TMP" --write-out '%{http_code}' \
+                "${API_PROXY_URL}omdb/?i=tt0111161&apikey=$API_KEY_PLACEHOLDER" 2>/dev/null || true
+        )"
+        if [ "$API_SMOKE_STATUS" = "200" ] && grep -qE '"Response"[[:space:]]*:[[:space:]]*"True"' "$API_SMOKE_TMP"; then
+            ok "The API proxy answers for OMDb with the key injected by nginx (awards enabled)."
+        else
+            warn "The API proxy did not answer as expected for OMDb (HTTP ${API_SMOKE_STATUS:-no response}). Response: $(http_body_snippet "$API_SMOKE_TMP")"
+            warn "Awards will not show until nginx has the omdb/ location and the key (deploy/nginx/render-keys.sh --from-truenas, then reload nginx)."
+        fi
+        rm -f "$API_SMOKE_TMP"
+    fi
 fi
 
 # --- 1) emby-elsewhere.js ------------------------------------------------
@@ -2488,11 +2758,13 @@ if [ -n "$API_PROXY_URL" ]; then
     JS_TMDB_API_KEY="$API_KEY_PLACEHOLDER"
     JS_MDBLIST_API_KEY="$API_KEY_PLACEHOLDER"
     JS_KINOPOISK_API_KEY="$API_KEY_PLACEHOLDER"
+    JS_OMDB_API_KEY="$API_KEY_PLACEHOLDER"
     API_KEYS_MODE_TEXT="placeholder (the real keys live in nginx: $API_PROXY_URL)"
 else
     JS_TMDB_API_KEY="$TMDB_API_KEY"
     JS_MDBLIST_API_KEY="$MDBLIST_API_KEY"
     JS_KINOPOISK_API_KEY="$KINOPOISK_API_KEY"
+    JS_OMDB_API_KEY="$OMDB_API_KEY"
     API_KEYS_MODE_TEXT="real (direct API calls from the browser)"
 fi
 
@@ -2679,11 +2951,32 @@ else
     warn "KINOPOISK_API_KEY not configured: not injected into emby-ratings.js."
 fi
 
+# OMDb (awards) exists only in emby-ratings.js since 2026-09-30. Without a
+# configured key it is set to '' on purpose: the addon then never calls
+# OMDb and simply shows no awards row.
+RATINGS_HAS_OMDB=0
+if [ "$(count_property_decl "$RATINGS" "OMDB_API_KEY")" != "0" ]; then
+    RATINGS_HAS_OMDB=1
+    if [ -n "$OMDB_API_KEY" ]; then
+        set_or_die_property_string "$RATINGS" "OMDB_API_KEY" "$JS_OMDB_API_KEY"
+        ok "OMDB_API_KEY injected: $API_KEYS_MODE_TEXT"
+    else
+        set_or_die_property_string "$RATINGS" "OMDB_API_KEY" ""
+        warn "OMDB_API_KEY not configured: emby-ratings.js installed without awards (Oscars/Emmys)."
+    fi
+else
+    warn "This emby-ratings.js has no OMDB_API_KEY setting (older upstream version): awards come from its own sources."
+fi
+
 if [ -n "$API_PROXY_URL" ]; then
     N1="$(rewrite_api_base "$RATINGS" "$API_BASE_TMDB" "${API_PROXY_URL}tmdb/")"
     N2="$(rewrite_api_base "$RATINGS" "$API_BASE_MDBLIST" "${API_PROXY_URL}mdblist/")"
     N3="$(rewrite_api_base "$RATINGS" "$API_BASE_KINOPOISK" "${API_PROXY_URL}kinopoisk/")"
     ok "TMDB, MDBList and Kinopoisk via API proxy ($N1 + $N2 + $N3 URLs rewritten)."
+    if [ "$RATINGS_HAS_OMDB" = "1" ]; then
+        N4="$(rewrite_api_base "$RATINGS" "$API_BASE_OMDB" "${API_PROXY_URL}omdb/")"
+        ok "OMDb via API proxy ($N4 URL(s) rewritten)."
+    fi
     assert_no_third_party_keys "$RATINGS"
 fi
 
@@ -2700,6 +2993,14 @@ set_or_die_property_raw    "$RATINGS" "enableMyAnimeList"    "$RATINGS_ENABLE_MY
 set_or_die_property_raw    "$RATINGS" "enableAniList"        "$RATINGS_ENABLE_ANI_LIST"
 set_or_die_property_raw    "$RATINGS" "CACHE_TTL_HOURS"      "$RATINGS_CACHE_TTL_HOURS"
 set_or_die_property_string "$RATINGS" "CORS_PROXY_URL"       "$RATINGS_CORS_PROXY_URL"
+
+for PAIR in "enableAwards:$RATINGS_ENABLE_AWARDS" "enableCustomRatings:$RATINGS_ENABLE_CUSTOM_RATINGS"; do
+    if set_if_property_raw "$RATINGS" "${PAIR%%:*}" "${PAIR#*:}"; then
+        ok "${PAIR%%:*} = ${PAIR#*:}"
+    else
+        warn "${PAIR%%:*} does not exist in this emby-ratings.js (older upstream version): not set."
+    fi
+done
 
 ok "emby-ratings.js configuration applied."
 
@@ -2752,7 +3053,7 @@ for JS in "${JS_NAMES[@]}"; do
     # a substring -- if Emby's own index.html ever mentions that name in
     # another context (comment, inline config), that line must not
     # disappear.
-    sed -i -E "/<script[^>]*src=\"${ESC_JS}\"[^>]*>/d" "$CURRENT_STRIPPED"
+    sed -i -E "/<script[^>]*src=\"${ESC_JS}(\?[^\"]*)?\"[^>]*>/d" "$CURRENT_STRIPPED"
 done
 
 if [ -s "$ORIGINAL_INDEX" ]; then
@@ -2783,13 +3084,17 @@ grep -q '</body>' "$STAGED_INDEX" \
 #    real tag as above, not a substring of the file name)
 for JS in "${JS_NAMES[@]}"; do
     ESC_JS="$(printf '%s' "$JS" | sed 's/[.[\*^$/]/\\&/g')"
-    sed -i -E "/<script[^>]*src=\"${ESC_JS}\"[^>]*>/d" "$STAGED_INDEX"
+    sed -i -E "/<script[^>]*src=\"${ESC_JS}(\?[^\"]*)?\"[^>]*>/d" "$STAGED_INDEX"
 done
 
-# 2) inject one <script> line per addon, right before </body>
+# 2) inject one <script> line per addon, right before </body>. Each src
+#    carries ?v=<first 12 hex of the staged file's sha256>: a new addon
+#    version gets a new URL, so neither the browser cache nor a reverse proxy
+#    cache (nginx keeps static .js for a day) can keep serving the old one
+#    after an install. Emby ignores the query string when serving the file.
 INJECTION="$(
     for JS in "${JS_NAMES[@]}"; do
-        printf '    <script src="%s" defer></script>\n' "$JS"
+        printf '    <script src="%s?v=%s" defer></script>\n' "$JS" "$(sha256sum "$DASHBOARD_UI/$JS" | cut -c1-12)"
     done
 )"
 
@@ -2797,13 +3102,20 @@ awk -v inj="$INJECTION" '
     /<\/body>/ && !done { print inj; done=1 }
     { print }
 ' "$STAGED_INDEX" > "$STAGED_INDEX.new"
+# awk always ends the output with a newline; Emby's index.html ships without
+# one. Keep the original ending so that, with our tags stripped, the installed
+# file is byte-identical to Emby's (otherwise the next run sees a "changed"
+# index.html and rewrites the saved baseline every time).
+if [ -n "$(tail -c 1 "$STAGED_INDEX")" ]; then
+    truncate -s -1 "$STAGED_INDEX.new"
+fi
 mv "$STAGED_INDEX.new" "$STAGED_INDEX"
 
 for JS in "${JS_NAMES[@]}"; do
     COUNT="$(grep -cF "$JS" "$STAGED_INDEX" || true)"
     [ "$COUNT" = "1" ] || die_precheck "$JS appears $COUNT times in index.html after injection (expected: 1)."
 done
-ok "6 addons referenced exactly once in index.html."
+ok "6 addons referenced exactly once in index.html (with ?v=<sha256 prefix> cache busting)."
 
 assert_no_emby_key "$STAGED_INDEX"
 ok "EMBY_API_KEY absent from index.html."
@@ -2914,6 +3226,8 @@ if [ "$DRY_RUN" = "1" ]; then
         echo "  Theme:          NOT registered (fallback to CustomCss: $THEME_FALLBACK_REASON)"
         echo "  Branding CSS:   would be replaced with $CSS_NAME ($CSS_HASH)"
     fi
+    echo "  CSS:            $CSS_NAME made for Emby ${CSS_EMBY_VERSION:-(unknown)} (source: $CSS_SOURCE_KIND, $CSS_URL)"
+    echo "  Ratings:        awards=$RATINGS_ENABLE_AWARDS (OMDb key: $OMDB_KEY_STATUS), $RATINGS_DATA_NAME=$RATINGS_DATA_KIND, NativeSpotlight plugin=$NATIVE_SPOTLIGHT_PLUGIN"
     echo "  CORS proxy:     ${CORS_PROXY_URL:-(empty)}"
     echo "  API proxy:      ${API_PROXY_URL:-(empty)}"
     echo "  Config file:    ${CONFIG_FILE_USED:-(none)}"
@@ -3000,6 +3314,23 @@ for JS in "${JS_NAMES[@]}"; do
     fi
 done
 
+# Curated Spotlight list: back up its current version if present, so a
+# rollback restores it; if it was absent, rollback removes ours.
+if docker exec "$CONTAINER" sh -c "test -f '$SPOTLIGHT_ITEMS_CONTAINER_PATH'"; then
+    docker cp "$CONTAINER:$SPOTLIGHT_ITEMS_CONTAINER_PATH" "$BACKUP_DIR/$SPOTLIGHT_ITEMS_NAME"
+    ok "$SPOTLIGHT_ITEMS_NAME backed up."
+else
+    log "  -- $SPOTLIGHT_ITEMS_NAME did not exist before (documented so it can be removed in a rollback)."
+fi
+
+# ratings-data.json: same rule as the Spotlight list.
+if docker exec "$CONTAINER" sh -c "test -f '$RATINGS_DATA_CONTAINER_PATH'"; then
+    docker cp "$CONTAINER:$RATINGS_DATA_CONTAINER_PATH" "$BACKUP_DIR/$RATINGS_DATA_NAME"
+    ok "$RATINGS_DATA_NAME backed up."
+else
+    log "  -- $RATINGS_DATA_NAME did not exist before (documented so it can be removed in a rollback)."
+fi
+
 step "Current CustomCss (Branding/Configuration)"
 
 BRANDING_BEFORE_TMP="$(mktemp "$CUSTOM_ROOT/.branding-before.XXXXXX.tmp")"
@@ -3057,6 +3388,10 @@ INDEX=$(shell_single_quote "$INDEX_CONTAINER_PATH")
 DASHBOARD_DIR=$(shell_single_quote "$DASHBOARD_CONTAINER_DIR")
 SKINMANAGER=$(shell_single_quote "$SKINMANAGER_CONTAINER_PATH")
 THEME_CSS=$(shell_single_quote "$THEME_CSS_CONTAINER_PATH")
+SPOTLIGHT_ITEMS_NAME=$(shell_single_quote "$SPOTLIGHT_ITEMS_NAME")
+SPOTLIGHT_ITEMS=$(shell_single_quote "$SPOTLIGHT_ITEMS_CONTAINER_PATH")
+RATINGS_DATA_NAME=$(shell_single_quote "$RATINGS_DATA_NAME")
+RATINGS_DATA=$(shell_single_quote "$RATINGS_DATA_CONTAINER_PATH")
 BACKUP_DIR=$(shell_single_quote "$BACKUP_DIR")
 BACKUP_TGZ=$(shell_single_quote "$BACKUP_TGZ")
 SECRETS_FILE=$(shell_single_quote "$SECRETS_FILE")
@@ -3124,6 +3459,20 @@ for JS in "\${JS_NAMES[@]}"; do
         [ "\$RC" = "1" ] && HAD_FAILURE=1
     fi
 done
+
+if restore_or_remove_file "\$CONTAINER" "\$BACKUP_DIR/\$SPOTLIGHT_ITEMS_NAME" "\$SPOTLIGHT_ITEMS" "\$SPOTLIGHT_ITEMS_NAME"; then
+    HAD_SUCCESS=1
+else
+    RC=\$?
+    [ "\$RC" = "1" ] && HAD_FAILURE=1
+fi
+
+if restore_or_remove_file "\$CONTAINER" "\$BACKUP_DIR/\$RATINGS_DATA_NAME" "\$RATINGS_DATA" "\$RATINGS_DATA_NAME"; then
+    HAD_SUCCESS=1
+else
+    RC=\$?
+    [ "\$RC" = "1" ] && HAD_FAILURE=1
+fi
 
 echo "Restoring theme (skinmanager.js + theme.css)..."
 if restore_or_warn_file "\$CONTAINER" "\$BACKUP_DIR/skinmanager.js" "\$SKINMANAGER" "skinmanager.js"; then
@@ -3221,10 +3570,26 @@ SKINMANAGER_REL=$(shell_single_quote "$SKINMANAGER_REL")
 THEME_CSS_REL=$(shell_single_quote "$THEME_CSS_REL")
 SKINMANAGER=$(shell_single_quote "$SKINMANAGER_CONTAINER_PATH")
 THEME_CSS=$(shell_single_quote "$THEME_CSS_CONTAINER_PATH")
+SPOTLIGHT_ITEMS_NAME=$(shell_single_quote "$SPOTLIGHT_ITEMS_NAME")
+SPOTLIGHT_ITEMS=$(shell_single_quote "$SPOTLIGHT_ITEMS_CONTAINER_PATH")
+RATINGS_DATA_NAME=$(shell_single_quote "$RATINGS_DATA_NAME")
+RATINGS_DATA=$(shell_single_quote "$RATINGS_DATA_CONTAINER_PATH")
+# Emby version the staged index.html/skinmanager.js were built from.
+INSTALLED_EMBY_VERSION=$(shell_single_quote "$EMBY_SERVER_VERSION")
 
 JS_NAMES=(
 $JS_NAMES_BASH_ARRAY
 )
+
+# --force: reapply even if Emby's version changed since the install (see the
+# version check below). Without it, that case is refused.
+FORCE=0
+for ARG in "\$@"; do
+    case "\$ARG" in
+        --force) FORCE=1 ;;
+        *) echo "usage: \$0 [--force]" >&2; exit 1 ;;
+    esac
+done
 
 REAPPLY_STARTED=0
 ROLLBACK_RUNNING=0
@@ -3380,9 +3745,22 @@ then
     [ -n "\$REAPPLY_DETECTED_VERSION" ] && REAPPLY_EMBY_VERSION="\$REAPPLY_DETECTED_VERSION"
 fi
 rm -f "\$REAPPLY_VERSION_TMP"
-echo "Emby server: \$REAPPLY_EMBY_VERSION (this script was tested against \$TESTED_EMBY_VERSION)"
-if [ "\$REAPPLY_EMBY_VERSION" != "unknown" ] && [ "\$REAPPLY_EMBY_VERSION" != "\$TESTED_EMBY_VERSION" ]; then
-    echo "WARNING: the Emby version changed from the tested one -- the addons/index.html about to be reapplied were edited for \$TESTED_EMBY_VERSION."
+echo "Emby server: \$REAPPLY_EMBY_VERSION (installed on \$INSTALLED_EMBY_VERSION; installer tested against \$TESTED_EMBY_VERSION)"
+# index.html and skinmanager.js are Emby's own files: the staged copies are
+# Emby \$INSTALLED_EMBY_VERSION's files plus our additions. Copying them over
+# a newer (or older) Emby would replace that version's files with the old
+# ones and can break the web UI. After an Emby upgrade the right tool is
+# install-emby-custom.sh, which rebuilds them from the current container.
+if [ "\$REAPPLY_EMBY_VERSION" != "unknown" ] && [ "\$INSTALLED_EMBY_VERSION" != "unknown" ] \\
+    && [ "\$REAPPLY_EMBY_VERSION" != "\$INSTALLED_EMBY_VERSION" ]; then
+    if [ "\$FORCE" = "1" ]; then
+        echo "WARNING: Emby changed from \$INSTALLED_EMBY_VERSION to \$REAPPLY_EMBY_VERSION; reapplying anyway (--force)."
+    else
+        echo "ERROR: Emby changed from \$INSTALLED_EMBY_VERSION to \$REAPPLY_EMBY_VERSION since this install."
+        echo "The staged index.html/skinmanager.js belong to \$INSTALLED_EMBY_VERSION and would replace the new ones."
+        echo "Run install-emby-custom.sh again instead (or pass --force if you know what you are doing). Nothing was touched."
+        exit 1
+    fi
 fi
 
 for JS in "\${JS_NAMES[@]}"; do
@@ -3454,6 +3832,16 @@ for JS in "\${JS_NAMES[@]}"; do
     docker cp "\$CUSTOM/\$JS" "\$CONTAINER:\$DASHBOARD_DIR/\$JS"
     echo "  OK \$JS"
 done
+
+if [ -f "\$CUSTOM/\$SPOTLIGHT_ITEMS_NAME" ]; then
+    docker cp "\$CUSTOM/\$SPOTLIGHT_ITEMS_NAME" "\$CONTAINER:\$SPOTLIGHT_ITEMS"
+    echo "  OK \$SPOTLIGHT_ITEMS_NAME"
+fi
+
+if [ -f "\$CUSTOM/\$RATINGS_DATA_NAME" ]; then
+    docker cp "\$CUSTOM/\$RATINGS_DATA_NAME" "\$CONTAINER:\$RATINGS_DATA"
+    echo "  OK \$RATINGS_DATA_NAME"
+fi
 
 echo "Copying index.html..."
 docker cp "\$CUSTOM/index.html" "\$CONTAINER:\$INDEX"
@@ -3581,6 +3969,16 @@ for JS in "${JS_NAMES[@]}"; do
     docker exec "$CONTAINER" sh -c "chmod 644 '$DASHBOARD_CONTAINER_DIR/$JS'"
     ok "$JS installed."
 done
+
+step "Copying $SPOTLIGHT_ITEMS_NAME into the container"
+docker cp "$DASHBOARD_UI/$SPOTLIGHT_ITEMS_NAME" "$CONTAINER:$SPOTLIGHT_ITEMS_CONTAINER_PATH"
+docker exec "$CONTAINER" sh -c "chmod 644 '$SPOTLIGHT_ITEMS_CONTAINER_PATH'"
+ok "$SPOTLIGHT_ITEMS_NAME installed."
+
+step "Copying $RATINGS_DATA_NAME into the container"
+docker cp "$RATINGS_DATA_STAGED" "$CONTAINER:$RATINGS_DATA_CONTAINER_PATH"
+docker exec "$CONTAINER" sh -c "chmod 644 '$RATINGS_DATA_CONTAINER_PATH'"
+ok "$RATINGS_DATA_NAME installed ($RATINGS_DATA_KIND)."
 
 step "Copying index.html into the container"
 docker cp "$STAGED_INDEX" "$CONTAINER:$INDEX_CONTAINER_PATH"
@@ -3730,6 +4128,31 @@ INDEX_HASH="$(docker exec "$CONTAINER" sh -c "sha256sum '$INDEX_CONTAINER_PATH'"
 echo "$INDEX_HASH  index.html" >> "$INSTALLED_HASHES"
 ok "index.html present (sha256 $INDEX_HASH)"
 
+# Curated Spotlight list: present + byte-identical to what was staged.
+docker exec "$CONTAINER" sh -c "test -f '$SPOTLIGHT_ITEMS_CONTAINER_PATH'" \
+    || die_critical "$SPOTLIGHT_ITEMS_NAME does not exist in the container after the install."
+SPOTLIGHT_ITEMS_EXPECTED="$(sha256sum "$DASHBOARD_UI/$SPOTLIGHT_ITEMS_NAME" | awk '{print $1}')"
+SPOTLIGHT_ITEMS_ACTUAL="$(docker exec "$CONTAINER" sh -c "sha256sum '$SPOTLIGHT_ITEMS_CONTAINER_PATH'" | awk '{print $1}')"
+[ "$SPOTLIGHT_ITEMS_EXPECTED" = "$SPOTLIGHT_ITEMS_ACTUAL" ] \
+    || die_critical "$SPOTLIGHT_ITEMS_NAME: installed SHA256 does not match the staged file."
+echo "$SPOTLIGHT_ITEMS_ACTUAL  $SPOTLIGHT_ITEMS_NAME" >> "$INSTALLED_HASHES"
+ok "$SPOTLIGHT_ITEMS_NAME present (sha256 OK)"
+
+RATINGS_DATA_ACTUAL="$(docker exec "$CONTAINER" sh -c "sha256sum '$RATINGS_DATA_CONTAINER_PATH'" 2>/dev/null | awk '{print $1}' || true)"
+[ "$RATINGS_DATA_ACTUAL" = "$RATINGS_DATA_HASH" ] \
+    || die_critical "$RATINGS_DATA_NAME: missing in the container or its SHA256 does not match the staged file."
+echo "$RATINGS_DATA_ACTUAL  $RATINGS_DATA_NAME" >> "$INSTALLED_HASHES"
+ok "$RATINGS_DATA_NAME present (sha256 OK, $RATINGS_DATA_KIND)"
+
+# Every <script> tag of ours must carry the ?v= of the file actually
+# installed (otherwise browsers could keep a cached older addon).
+for JS in "${JS_NAMES[@]}"; do
+    JS_VER="$(sha256sum "$DASHBOARD_UI/$JS" | cut -c1-12)"
+    docker exec "$CONTAINER" sh -c "grep -qF 'src=\"$JS?v=$JS_VER\"' '$INDEX_CONTAINER_PATH'" \
+        || die_critical "index.html in the container does not reference $JS?v=$JS_VER (cache-busting version of the installed file)."
+done
+ok "index.html references every addon with the ?v= of the installed file."
+
 if [ "$THEME_MODE" = "theme" ]; then
     step "Theme $THEME_NAME in the container"
 
@@ -3845,6 +4268,18 @@ grep -Eq "enableMobileVideo[[:space:]]*:[[:space:]]*${SPOTLIGHT_ENABLE_MOBILE_VI
     || die_critical "Installed Spotlight.js does not have enableMobileVideo=$SPOTLIGHT_ENABLE_MOBILE_VIDEO."
 ok "enableMobileVideo=$SPOTLIGHT_ENABLE_MOBILE_VIDEO"
 
+if [ "$RATINGS_HAS_OMDB" = "1" ]; then
+    step "emby-ratings.js (awards)"
+    RATINGS_EXPECTED_OMDB=""
+    [ -n "$OMDB_API_KEY" ] && RATINGS_EXPECTED_OMDB="$JS_OMDB_API_KEY"
+    grep -Eq "^[[:space:]]*OMDB_API_KEY[[:space:]]*:[[:space:]]*(['\"])$(grep_escape_ere "$RATINGS_EXPECTED_OMDB")\\1" "$RATINGS" \
+        || die_critical "Installed emby-ratings.js does not have the expected OMDB_API_KEY value."
+    if [ -n "$API_PROXY_URL" ] && grep -qF "$API_BASE_OMDB" "$RATINGS"; then
+        die_critical "Installed emby-ratings.js still calls $API_BASE_OMDB directly despite API proxy mode."
+    fi
+    ok "OMDB_API_KEY $([ -n "$OMDB_API_KEY" ] && echo "set (${API_PROXY_URL:+placeholder, }awards on)" || echo "empty (awards off)")"
+fi
+
 INSTALL_STARTED=0
 
 # Only now -- PHASE 9/9 has already verified that the 6 addons ended up
@@ -3896,6 +4331,10 @@ fi
     echo "  \"css_status\": \"$CSS_STATUS_JSON\","
     echo "  \"css_url\": \"$(json_escape "$CSS_URL")\","
     echo "  \"css_pin_ref\": \"$(json_escape "$CSS_PIN_REF")\","
+    echo "  \"css_source\": \"$(json_escape "$CSS_SOURCE_KIND")\","
+    echo "  \"css_emby_version\": \"$(json_escape "$CSS_EMBY_VERSION")\","
+    echo "  \"spotlight_items_file\": \"$(json_escape "$SPOTLIGHT_ITEMS_NAME")\","
+    echo "  \"spotlight_items_sha256\": \"$(json_escape "${SPOTLIGHT_ITEMS_HASH:-}")\","
     echo "  \"theme\": {"
     echo "    \"mode\": \"$(json_escape "$THEME_MODE")\","
     echo "    \"id\": \"$(json_escape "$THEME_ID")\","
@@ -3934,6 +4373,12 @@ fi
     echo "  },"
     echo "  \"ratings\": {"
     echo "    \"cache_ttl_hours\": $RATINGS_CACHE_TTL_HOURS,"
+    echo "    \"enable_awards\": $RATINGS_ENABLE_AWARDS,"
+    echo "    \"enable_custom_ratings\": $RATINGS_ENABLE_CUSTOM_RATINGS,"
+    echo "    \"omdb_key\": \"$OMDB_KEY_STATUS\","
+    echo "    \"ratings_data\": \"$RATINGS_DATA_KIND\","
+    echo "    \"ratings_data_sha256\": \"$RATINGS_DATA_HASH\","
+    echo "    \"native_spotlight_plugin\": \"$NATIVE_SPOTLIGHT_PLUGIN\","
     echo "    \"cors_proxy_configured\": $([ -n "$RATINGS_CORS_PROXY_URL" ] && echo true || echo false)"
     echo "  },"
     echo "  \"files\": ["
@@ -3998,7 +4443,10 @@ ok "$MANIFEST_FILE"
     echo "    \"cache_ttl_hours\": $SPOTLIGHT_CACHE_TTL_HOURS"
     echo "  },"
     echo "  \"ratings\": {"
-    echo "    \"cache_ttl_hours\": $RATINGS_CACHE_TTL_HOURS"
+    echo "    \"cache_ttl_hours\": $RATINGS_CACHE_TTL_HOURS,"
+    echo "    \"enable_awards\": $RATINGS_ENABLE_AWARDS,"
+    echo "    \"enable_custom_ratings\": $RATINGS_ENABLE_CUSTOM_RATINGS,"
+    echo "    \"ratings_data\": \"$RATINGS_DATA_KIND\""
     echo "  },"
     echo "  \"last_install_timestamp\": \"$(json_escape "$TIMESTAMP")\""
     echo "}"
@@ -4075,13 +4523,15 @@ echo "Reapply:          $REAPPLY_FILE"
 echo
 echo "Reviews.js:       PRIMARY_LANGUAGE=$REVIEWS_PRIMARY_LANGUAGE, MAX_REVIEWS=$REVIEWS_MAX_REVIEWS"
 echo "Spotlight.js:     enableMobileVideo=$SPOTLIGHT_ENABLE_MOBILE_VIDEO, quality=$SPOTLIGHT_PREFERRED_VIDEO_QUALITY, sponsorBlock=$SPOTLIGHT_ENABLE_SPONSOR_BLOCK"
+echo "emby-ratings.js:  awards=$RATINGS_ENABLE_AWARDS (OMDb key: $OMDB_KEY_STATUS), customRatings=$RATINGS_ENABLE_CUSTOM_RATINGS, $RATINGS_DATA_NAME=$RATINGS_DATA_KIND, NativeSpotlight plugin=$NATIVE_SPOTLIGHT_PLUGIN"
+echo "CSS:              $CSS_NAME made for Emby ${CSS_EMBY_VERSION:-(unknown)} (source: $CSS_SOURCE_KIND), Emby here: $EMBY_SERVER_VERSION"
 echo "Elsewhere.js:     UI language=$ELSEWHERE_UI_LANGUAGE (see $TRANSLATION_REPORT), region=$ELSEWHERE_DEFAULT_REGION"
 echo "                  DEFAULT_PROVIDERS=$ELSEWHERE_DEFAULT_PROVIDERS_JS, IGNORE_PROVIDERS=$ELSEWHERE_IGNORE_PROVIDERS_JS"
 echo "CORS proxy:       ${CORS_PROXY_URL:-(empty)}"
 if [ -n "$API_PROXY_URL" ]; then
-    echo "API proxy:        $API_PROXY_URL (TMDB/MDBList/Kinopoisk keys only in nginx; responses cached for everyone)"
+    echo "API proxy:        $API_PROXY_URL (TMDB/MDBList/Kinopoisk/OMDb keys only in nginx; responses cached for everyone)"
 else
-    echo "API proxy:        (empty) -- TMDB/MDBList/Kinopoisk keys are embedded in the JS files"
+    echo "API proxy:        (empty) -- TMDB/MDBList/Kinopoisk/OMDb keys are embedded in the JS files"
 fi
 echo
 echo "Next steps:"
@@ -4112,7 +4562,7 @@ section "NOTES"
 
 echo "API_PROXY_URL:"
 if [ -n "$API_PROXY_URL" ]; then
-    echo "  The addons' calls to TMDB, MDBList and Kinopoisk go through"
+    echo "  The addons' calls to TMDB, MDBList, Kinopoisk and OMDb go through"
     echo "  $API_PROXY_URL (nginx adds the keys and caches the responses"
     echo "  for all users). The installed JS files only contain a placeholder,"
     echo "  never a real key (verified before installing)."
@@ -4136,6 +4586,12 @@ else
     echo "  to empty in the 3 addons. They work the same, just without those"
     echo "  two specific improvements."
 fi
+echo
+echo "Caches:"
+echo "  The addon <script> tags carry ?v=<sha256 prefix>, so browsers and a"
+echo "  reverse proxy fetch the new versions right away. theme.css keeps its"
+echo "  URL: if a reverse proxy caches it and the CSS changed, purge it"
+echo "  (deploy/nginx/purge-assets.sh on the proxy host)."
 echo
 echo "Addon verification (--require-known-hashes):"
 echo "  The hash of each addon downloaded today was stored as the new"

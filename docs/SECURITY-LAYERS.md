@@ -16,7 +16,7 @@ project)* ship in `deploy/nginx/`; *(host)* are host services.
 browser ──TLS──> nginx vhost ──> [host check] ──> [location match]
                                                      │
               /emby/…, /web/…  ── admin paths LAN-only ── method gate (WAN) ── Emby
-              /api-proxy/…     ── client-origin gate ── rate limit ── key injection ── cache ── TMDB/MDBList/Kinopoisk
+              /api-proxy/…     ── client-origin gate ── rate limit ── key injection ── cache ── TMDB/MDBList/Kinopoisk/OMDb
               /cors-proxy/…    ── target allow-list ── method gate ── cache ── RT/AlloCiné/TMDB web
                                                      │
                        fail2ban (reads the access logs of the three paths above)
@@ -81,7 +81,7 @@ which would burn the daily quota of the MDBList key.
 ### 8. API proxy — key injection and one fixed upstream per location *(this project)*
 The addons are installed with a placeholder instead of the real keys; nginx
 strips `api_key=`/`apikey=` from the query and adds the real value (query
-for TMDB/MDBList, `X-API-KEY` header for Kinopoisk) from
+for TMDB/MDBList/OMDb, `X-API-KEY` header for Kinopoisk) from
 `snippets/emby-api-keys.conf` (`chmod 600`, read by the master as root).
 Each location proxies to exactly one host — it is not an open proxy. The
 installer refuses to install if a real key value is found in a staged
@@ -105,10 +105,24 @@ use of the proxy to reach arbitrary hosts, cookie leakage.
 ### 11. fail2ban *(host)*
 Jails read nginx's access logs: `[emby]` (Emby app-level auth failures),
 `[emby-admin-probe]` (403 on the admin paths), and this project's
-`[emby-api-proxy]` (403/405/429 on `/api-proxy/` and `/cors-proxy/`,
-`maxretry 10` in `10m`, `bantime 1h`). Stops: sustained probing/abuse from
-one IP at the firewall, before nginx spends more cycles on it. Test a
-filter with `fail2ban-regex <log> <filter>` before enabling it.
+`[emby-api-proxy]` (401/403/405/429 on `/api-proxy/` and `/cors-proxy/`, including the
+rate-limit 429, which nginx logs with the already rewritten upstream path,
+`maxretry 10` in `10m`, `bantime 1h`), and `[emby-web-scan]` (WordPress/PHP
+vulnerability scanners on the vhost: `/wp-json`, `xmlrpc`, `.env`, …,
+`maxretry 2`). Stops: sustained probing/abuse from one IP at the firewall,
+before nginx spends more cycles on it. Test a filter with
+`fail2ban-regex <log> <filter>` before enabling it.
+
+### 11b. Native scan-path block *(`snippets/emby-scan-block.conf`, shipped here)*
+A regex `location` on the Emby vhost drops the same vulnerability-scan paths
+with `return 444` (connection closed, no response) *at request time*, before
+they reach the app — complementing the after-the-fact `[emby-web-scan]` ban.
+It is deliberately a plain `location`, **not** a WAF engine: an OWASP Coraza
+WAF was evaluated here and caused an outage (the experimental `coraza-nginx`
+connector stalls WebSocket/streaming and hangs on `deny`), so the engine was
+deferred.
+A `location`/`return` cannot sit on the WebSocket/streaming data path, so it
+carries none of that risk.
 
 ### 12. Installer-side controls *(this project)*
 Downloads hashed and compared with the last good install
@@ -119,7 +133,7 @@ exactly the inserted entry; full backup + rollback before anything is
 touched; config file parsed and validated, never sourced; secrets file
 ownership/permissions checked; concurrent runs excluded with `flock`.
 
-### 13. Access-log token redaction *(vhost's shared `nginx.conf` — not tracked in this repo)*
+### 13. Access-log token privacy + traceability *(`conf.d/emby-log-redaction.conf` + `njs/emby-log.js`, shipped here; the nginx host is managed elsewhere)*
 Found 2026-09-28 while comparing an old (2015) open-source Samsung Smart TV
 Emby client against this deployment's real traffic, as a side project to
 understand the protocol better (not a scheduled audit): the old client sent
@@ -132,29 +146,65 @@ but its own comment explicitly assumed *"the header form
 client in use today. Result: **2,576 unredacted session tokens** in a single
 day's `emby_access.log` before the fix (confirmed by grep, not estimated).
 
-Fix: chained a second `map` onto the existing one (`$args` →
-`$args_apikey_safe` → `$args_safe`, feeding the same `$args_safe` both
-`log_format`s already used) that redacts `X-Emby-Token=<value>` the same
-way. Backed up (`nginx.conf.bak.<timestamp>`), syntax-tested
-(`nginx -t -c ... .new`) before swapping in, reloaded with zero downtime.
+Fix (kept OUT of the shared `nginx.conf` by design): a new dedicated file
+`conf.d/emby-log-redaction.conf` (http context, shipped in this repo under
+`deploy/nginx/etc/nginx/conf.d/`) defines `map $args_safe $emby_args_safe`
+that chains on the existing api_key-redacted `$args_safe` and additionally
+redacts `X-Emby-Token=<value>`; the Emby `log_format`s (`emby_timing` /
+`emby_cache` in `conf.d/emby-tuning.conf`) are pointed at `$emby_args_safe`.
+`nginx.conf` is left untouched. Backed up, `nginx -t`, reloaded with zero
+downtime.
+**Pseudonymization instead of blind redaction (traceability preserved).**
+Full redaction removes a credential but also destroys the ability to
+correlate a session's requests. So alongside redacting the raw token from the
+URL, the Emby `log_format`s now also carry:
+- `token_id=$emby_token_id` — a stable `HMAC-SHA256(server_secret, token)`
+  truncated to 16 hex, computed at log time by the njs module
+  `njs/emby-log.js`. It is the **same** value for every request of one
+  session (so cliente → sesión → requests → playback → timestamps can be
+  reconstructed) and for token reuse/theft detection (same token_id from two
+  IPs/devices), yet it is **not reversible** to the token and is **not a
+  usable credential**. The secret lives in `/etc/nginx/secrets/emby-token-hmac.key`
+  (chmod 600), read once per worker; rotating it changes all token_ids
+  (breaks cross-time correlation — documented, acceptable). The token is
+  looked up in the URL first and then in the headers (`X-Emby-Token`,
+  `X-MediaBrowser-Token`, `Token="…"` in `X-Emby-Authorization` /
+  `Authorization`), so Android/TV apps — which never put it in the URL — get
+  a token_id too, and the same token gives the same id either way.
+- `request_id=$request_id` — nginx's native per-request unique id, for
+  per-request tracing. No module or secret needed.
+
+Together with what the URL already carries unredacted (`X-Emby-Device-Id`,
+`X-Emby-Client`, and `UserId` on user-scoped paths, plus `PlaySessionId` on
+playback), the log keeps device-, user-, session- and request-level
+traceability with **no** plaintext credential.
+
+Enabling njs cost exactly **one** generic line in `nginx.conf`
+(`include /etc/nginx/main.d/*.conf;`); `load_module` (main-context only, so it
+cannot live in `conf.d/`) sits in `main.d/njs.conf`. That is the only
+`nginx.conf` line these improvements need, and it is dynamic-module
+infrastructure, not Emby logic.
+
 Verified against **real production traffic** (the household's Samsung TV,
 mid-playback) rather than a synthetic request: `X-Emby-Token=REDACTED` and
-`api_key=REDACTED` both confirmed in the live log immediately after reload,
-zero raw tokens logged since. Stops: session tokens sitting in plaintext,
-readable by anything with read access to the log file (backups, a
-log-shipper, another service on the same host), for as long as the log
-retention window (weeks to months here).
+`api_key=REDACTED` confirmed, `token_id` stable across a session (1 id / 4
+requests) while `request_id` was unique per request, zero raw tokens logged
+since. Stops: session tokens sitting in plaintext, readable by anything with
+read access to the log file (backups, a log-shipper, another service on the
+same host), for as long as the log retention window (weeks to months here) —
+without losing forensic correlation.
 
 **Known gaps, left as-is on purpose:**
 - Logs written *before* the fix (rotated `.gz` files going back to August,
   plus that day's own log before the reload) still hold real tokens in
   plaintext. Purging/rotating them is a retention decision for whoever owns
   that host, not something this project's tooling did unilaterally.
-- `nginx.conf` on the shared nginx host is **not part of this project** —
-  it belongs to a separate, Ansible-managed infrastructure project. The fix
-  is live on the host but will be overwritten by that project's next
-  provisioning run unless it is also ported into that project's own
-  template. Documented here because the *finding* came from this project's
+- The nginx host is managed by a separate, Ansible-managed infrastructure
+  project. `nginx.conf` is deliberately not modified; the redaction lives in
+  `conf.d/emby-log-redaction.conf` (new) plus a two-token change to
+  `conf.d/emby-tuning.conf`'s Emby `log_format`s. Those live on the host but
+  will be overwritten by that project's next provisioning run unless ported
+  into its templates. Documented here because the *finding* came from this project's
   investigation and affects this deployment either way.
 
 ---
@@ -172,7 +222,7 @@ del host.
 navegador ──TLS──> vhost nginx ──> [chequeo de host] ──> [match de location]
                                                           │
               /emby/…, /web/…  ── rutas admin solo LAN ── filtro de métodos (WAN) ── Emby
-              /api-proxy/…     ── origen del cliente ── rate limit ── inyección de key ── caché ── TMDB/MDBList/Kinopoisk
+              /api-proxy/…     ── origen del cliente ── rate limit ── inyección de key ── caché ── TMDB/MDBList/Kinopoisk/OMDb
               /cors-proxy/…    ── lista blanca de destinos ── filtro de métodos ── caché ── RT/AlloCiné/TMDB web
                                                           │
                           fail2ban (lee los access logs de las tres rutas de arriba)
@@ -240,7 +290,7 @@ que quemaría el cupo diario de la key de MDBList.
 ### 8. API proxy — inyección de key y un solo destino por location *(este proyecto)*
 Los addons se instalan con un placeholder en vez de las keys reales; nginx
 quita `api_key=`/`apikey=` del query y agrega el valor real (query para
-TMDB/MDBList, header `X-API-KEY` para Kinopoisk) desde
+TMDB/MDBList/OMDb, header `X-API-KEY` para Kinopoisk) desde
 `snippets/emby-api-keys.conf` (`chmod 600`, lo lee el master como root).
 Cada location proxya exactamente a un host — no es un proxy abierto. El
 instalador se niega a instalar si encuentra una key real en un addon
@@ -265,10 +315,24 @@ para llegar a hosts arbitrarios, fuga de cookies.
 ### 11. fail2ban *(host)*
 Las jails leen los access logs de nginx: `[emby]` (fallos de auth de la app
 Emby), `[emby-admin-probe]` (403 en las rutas admin) y la de este proyecto
-`[emby-api-proxy]` (403/405/429 en `/api-proxy/` y `/cors-proxy/`,
-`maxretry 10` en `10m`, `bantime 1h`). Frena: sondeo/abuso sostenido desde
-una IP, en el firewall, antes de que nginx gaste más ciclos. Probar un
-filtro con `fail2ban-regex <log> <filtro>` antes de habilitarlo.
+`[emby-api-proxy]` (401/403/405/429 en `/api-proxy/` y `/cors-proxy/`, incluido el
+429 del rate limit, que nginx registra con la ruta del upstream ya reescrita,
+`maxretry 10` en `10m`, `bantime 1h`) y `[emby-web-scan]` (escáneres de
+vulnerabilidades WordPress/PHP en el vhost: `/wp-json`, `xmlrpc`, `.env`, …,
+`maxretry 2`). Frena: sondeo/abuso sostenido desde una IP, en el firewall,
+antes de que nginx gaste más ciclos. Probar un filtro con
+`fail2ban-regex <log> <filtro>` antes de habilitarlo.
+
+### 11b. Bloqueo nativo de rutas de escaneo *(`snippets/emby-scan-block.conf`, incluido acá)*
+Un `location` regex en el vhost de Emby dropea las mismas rutas de escaneo con
+`return 444` (cierra la conexión, sin respuesta) *en tiempo de request*, antes
+de que lleguen a la app — complementa el ban a posteriori de `[emby-web-scan]`.
+Es a propósito un `location` plano, **no** un motor WAF: se evaluó Coraza (WAF
+OWASP) acá y provocó un corte de acceso (el connector experimental
+`coraza-nginx` cuelga WebSocket/streaming y traba en `deny`), así que el motor
+quedó pospuesto.
+Un `location`/`return` no puede sentarse sobre el camino de datos de
+WebSocket/streaming, así que no tiene ese riesgo.
 
 ### 12. Controles del lado del instalador *(este proyecto)*
 Descargas hasheadas y comparadas con la última instalación buena
@@ -280,7 +344,7 @@ rollback antes de tocar nada; archivo de configuración parseado y validado,
 nunca "sourceado"; dueño/permisos del archivo de secretos verificados;
 corridas concurrentes excluidas con `flock`.
 
-### 13. Enmascarado de tokens en el log de acceso *(nginx.conf compartido del vhost — no versionado en este repo)*
+### 13. Privacidad del token + trazabilidad en el log de acceso *(`conf.d/emby-log-redaction.conf` + `njs/emby-log.js`, incluidos acá; el host de nginx se gestiona aparte)*
 Encontrado el 2026-09-28 al comparar un cliente viejo (2015), open source, de
 Emby para Samsung Smart TV contra el tráfico real de este despliegue, como
 proyecto paralelo para entender mejor el protocolo (no una auditoría
@@ -294,19 +358,54 @@ asumía explícitamente *"the header form (X-Emby-Token) is unaffected"*
 Resultado: **2.576 tokens de sesión sin enmascarar** en un solo día de
 `emby_access.log` antes del fix (confirmado con grep, no estimado).
 
-Arreglo: se encadenó un segundo `map` sobre el existente (`$args` →
-`$args_apikey_safe` → `$args_safe`, alimentando la misma `$args_safe` que ya
-usaban ambos `log_format`) que enmascara `X-Emby-Token=<valor>` de la misma
-forma. Con backup (`nginx.conf.bak.<timestamp>`), probado de sintaxis
-(`nginx -t -c ... .new`) antes de reemplazar, recargado sin caída de
-servicio. Verificado contra **tráfico real de producción** (la Smart TV
-Samsung de la casa, reproduciendo algo en ese momento) en vez de un pedido
-sintético: `X-Emby-Token=REDACTED` y `api_key=REDACTED` confirmados en el log
-en vivo apenas después del reload, cero tokens crudos registrados desde
-entonces. Frena: tokens de sesión quedando en texto plano, legibles por
-cualquier cosa con acceso de lectura al archivo de log (backups, un
-log-shipper, otro servicio en el mismo host), durante toda la ventana de
-retención (semanas a meses en este host).
+Arreglo (dejado FUERA del `nginx.conf` compartido a propósito): un archivo
+nuevo `conf.d/emby-log-redaction.conf` (contexto http, incluido en este repo
+bajo `deploy/nginx/etc/nginx/conf.d/`) define `map $args_safe $emby_args_safe`
+que se encadena sobre el `$args_safe` ya existente (con api_key redactada) y
+además enmascara `X-Emby-Token=<valor>`; los `log_format` de Emby
+(`emby_timing` / `emby_cache` en `conf.d/emby-tuning.conf`) se apuntan a
+`$emby_args_safe`. `nginx.conf` queda intacto. Con backup, `nginx -t`,
+recargado sin caída.
+
+**Pseudonimización en vez de redacción a ciegas (trazabilidad preservada).**
+Borrar el token del todo quita una credencial pero también destruye la
+correlación entre las requests de una sesión. Por eso, además de redactar el
+token crudo de la URL, los `log_format` de Emby ahora llevan:
+- `token_id=$emby_token_id` — un `HMAC-SHA256(secret_servidor, token)`
+  truncado a 16 hex, calculado en tiempo de log por el módulo njs
+  `njs/emby-log.js`. Es el **mismo** valor para todas las requests de una
+  sesión (permite reconstruir cliente → sesión → requests → reproducción →
+  timestamps) y detectar reuso/robo de token (mismo token_id desde dos
+  IPs/devices), pero **no es reversible** al token ni sirve como credencial.
+  El secreto vive en `/etc/nginx/secrets/emby-token-hmac.key` (chmod 600),
+  leído una vez por worker; rotarlo cambia todos los token_ids (rompe la
+  correlación histórica — documentado, aceptable). El token se busca primero
+  en la URL y después en los headers (`X-Emby-Token`, `X-MediaBrowser-Token`,
+  `Token="…"` en `X-Emby-Authorization` / `Authorization`), así las apps de
+  Android/TV — que nunca lo ponen en la URL — también tienen token_id, y el
+  mismo token da el mismo id por cualquiera de las dos vías.
+- `request_id=$request_id` — el id único por request nativo de nginx, para
+  trazado por-request. No necesita módulo ni secreto.
+
+Junto con lo que la URL ya lleva sin redactar (`X-Emby-Device-Id`,
+`X-Emby-Client`, y `UserId` en rutas por usuario, más `PlaySessionId` en
+reproducción), el log mantiene trazabilidad a nivel dispositivo, usuario,
+sesión y request **sin** ninguna credencial en texto plano.
+
+Habilitar njs costó exactamente **una** línea genérica en `nginx.conf`
+(`include /etc/nginx/main.d/*.conf;`); el `load_module` (solo contexto
+principal, no puede ir en `conf.d/`) vive en `main.d/njs.conf`. Es la única
+línea de `nginx.conf` que estas mejoras necesitan, y es infraestructura de
+carga de módulos, no lógica de Emby.
+
+Verificado contra **tráfico real de producción** (la Smart TV Samsung de la
+casa, reproduciendo algo) en vez de un pedido sintético: `X-Emby-Token=REDACTED`
+y `api_key=REDACTED` confirmados, `token_id` estable en la sesión (1 id / 4
+requests) y `request_id` único por request, cero tokens crudos desde entonces.
+Frena: tokens de sesión quedando en texto plano, legibles por cualquier cosa
+con acceso de lectura al archivo de log (backups, un log-shipper, otro servicio
+en el mismo host), durante toda la ventana de retención — sin perder la
+correlación forense.
 
 **Huecos conocidos, dejados a propósito:**
 - Los logs escritos *antes* del fix (los `.gz` rotados desde agosto, más lo
@@ -314,10 +413,11 @@ retención (semanas a meses en este host).
   tokens reales en texto plano. Purgar/rotar esos archivos es una decisión
   de retención de quien administra ese host, no algo que la herramienta de
   este proyecto hizo por su cuenta.
-- El `nginx.conf` del host de nginx compartido **no es parte de este
-  proyecto** — pertenece a un proyecto de infraestructura separado,
-  gestionado con Ansible. El arreglo quedó en vivo en el host, pero la
-  próxima corrida de aprovisionamiento de ese otro proyecto lo va a pisar
-  salvo que también se porte a su propio template. Se documenta acá porque
+- El host de nginx lo gestiona un proyecto de infraestructura separado
+  (Ansible). `nginx.conf` NO se modifica a propósito; la redacción vive en
+  `conf.d/emby-log-redaction.conf` (nuevo) más un cambio de dos tokens en los
+  `log_format` de Emby de `conf.d/emby-tuning.conf`. Eso quedó en vivo en el
+  host, pero la próxima corrida de ese otro proyecto lo va a pisar salvo que se
+  porte a sus templates. Se documenta acá porque
   el *hallazgo* salió de la investigación de este proyecto y afecta a este
   despliegue de cualquier manera.

@@ -1,0 +1,12 @@
+# snippets/emby-resolver.conf  (included inside location blocks)
+#
+# DNS resolver(s) nginx uses at runtime for proxy_pass with variables
+# (API proxy and CORS proxy destinations). Copy this file to
+# snippets/emby-resolver.conf on the nginx host and set your own servers.
+#
+# Use the resolvers your LAN is allowed to use. If the edge firewall forces
+# all DNS through a local filter (blocking 53/853 to the internet), public
+# resolvers here will time out ("could not be resolved (110)") and the
+# proxies will answer 502. Example: local DNS filter first, a second
+# internal resolver as fallback. 192.0.2.x are documentation addresses.
+resolver 192.0.2.53 192.0.2.54 valid=300s ipv6=off;

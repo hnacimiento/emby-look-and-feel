@@ -20,7 +20,7 @@
 | Secret | Lives in | Never appears in |
 |---|---|---|
 | `EMBY_API_KEY` | `secrets/api.env` on the host (chmod 600, owner-checked) | command lines (`curl -K` config file), logs, manifests, generated scripts, addons |
-| TMDB / MDBList / Kinopoisk keys | `secrets/api.env`; with the API proxy also `snippets/emby-api-keys.conf` on nginx (chmod 600) | the addons served to browsers (a placeholder is injected instead; the install aborts if a real key value is found in a staged addon), the config file, logs |
+| TMDB / MDBList / Kinopoisk / OMDb keys | `secrets/api.env`; with the API proxy also `snippets/emby-api-keys.conf` on nginx (chmod 600) | the addons served to browsers (a placeholder is injected instead; the install aborts if a real key value is found in a staged addon), the config file, logs |
 | Deployment details (hosts, IPs, domain) | `install-emby-custom.conf`, `deploy/truenas.env` (both gitignored) | tracked files (CI fails if it finds them) |
 
 ### Supply chain
@@ -55,7 +55,7 @@ include your keys, hostnames or logs with tokens in it.
 | Secreto | Vive en | Nunca aparece en |
 |---|---|---|
 | `EMBY_API_KEY` | `secrets/api.env` en el host (chmod 600, se verifica el dueño) | líneas de comando (`curl -K` con archivo de config), logs, manifests, scripts generados, addons |
-| Keys de TMDB / MDBList / Kinopoisk | `secrets/api.env`; con el API proxy también `snippets/emby-api-keys.conf` en nginx (chmod 600) | los addons que se sirven al navegador (se inyecta un placeholder; la instalación aborta si encuentra una key real en un addon preparado), el archivo de configuración, logs |
+| Keys de TMDB / MDBList / Kinopoisk / OMDb | `secrets/api.env`; con el API proxy también `snippets/emby-api-keys.conf` en nginx (chmod 600) | los addons que se sirven al navegador (se inyecta un placeholder; la instalación aborta si encuentra una key real en un addon preparado), el archivo de configuración, logs |
 | Datos del despliegue (hosts, IPs, dominio) | `install-emby-custom.conf`, `deploy/truenas.env` (ambos gitignored) | archivos versionados (la CI falla si los encuentra) |
 
 ### Cadena de suministro

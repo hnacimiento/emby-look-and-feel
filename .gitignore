@@ -23,6 +23,11 @@ known-source-sha256sums.txt
 # vista qué hay en deploy/.
 deploy/truenas.env
 
+# Per-site nginx values (real API keys, real internal resolvers). Only the
+# *.example templates are versioned.
+deploy/nginx/etc/nginx/snippets/emby-api-keys.conf
+deploy/nginx/etc/nginx/snippets/emby-resolver.conf
+
 # Deployment-specific values for the installer (container, URLs, proxies,
 # region/languages). The tracked template is install-emby-custom.conf.example.
 install-emby-custom.conf

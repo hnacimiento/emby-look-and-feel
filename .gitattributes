@@ -5,6 +5,7 @@
 *.conf  text eol=lf
 *.example text eol=lf
 *.yml   text eol=lf
+*.js    text eol=lf
 *.md    text eol=lf
 .gitattributes text eol=lf
 .gitignore     text eol=lf

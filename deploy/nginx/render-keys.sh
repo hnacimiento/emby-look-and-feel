@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Generates snippets/emby-api-keys.conf (the nginx 'map' constants holding
-# the real TMDB/MDBList/Kinopoisk keys) WITHOUT ever printing a key.
+# the real TMDB/MDBList/Kinopoisk/OMDb keys) WITHOUT ever printing a key.
 #
 # Source of the keys, in order of preference:
 #   --from-truenas   read secrets/api.env on the TrueNAS host over SSH
 #                    (deploy/truenas-ssh.sh; the file the installer validated)
-#   --from-env FILE  read TMDB_API_KEY/MDBLIST_API_KEY/KINOPOISK_API_KEY from
-#                    a local KEY=value file (e.g. deploy/truenas.env)
+#   --from-env FILE  read TMDB_API_KEY/MDBLIST_API_KEY/KINOPOISK_API_KEY/
+#                    OMDB_API_KEY from a local KEY=value file (e.g. deploy/truenas.env)
 #
 # Output: the path given with --out (default: a mktemp file, chmod 600).
 # Copy it to /etc/nginx/snippets/emby-api-keys.conf on the nginx host and
@@ -25,18 +25,22 @@ while [ "$#" -gt 0 ]; do
 done
 [ -n "$MODE" ] || { echo "usage: $0 (--from-truenas | --from-env FILE) [--out PATH]" >&2; exit 2; }
 
-TMDB=""; MDBLIST=""; KINOPOISK=""
+TMDB=""; MDBLIST=""; KINOPOISK=""; OMDB=""
 case "$MODE" in
     truenas)
-        # Only the three values travel back, newline-separated, never echoed here.
+        # Only the four values travel back, one per line, never echoed here.
+        # mapfile keeps empty lines, so an unset optional key cannot shift the
+        # others into the wrong variable (IFS-based splitting would collapse it).
         # shellcheck disable=SC2016
-        IFS=$'\n' read -r -d '' TMDB MDBLIST KINOPOISK < <("$HERE/../truenas-ssh.sh" -- 'source /mnt/toolbox/configs/emby/secrets/api.env 2>/dev/null || source "$(ls /mnt/*/configs/emby/secrets/api.env 2>/dev/null | head -1)"; printf "%s\n%s\n%s\n" "${TMDB_API_KEY:-}" "${MDBLIST_API_KEY:-}" "${KINOPOISK_API_KEY:-}"; printf "\0"') || true
+        mapfile -t KEYS_IN < <("$HERE/../truenas-ssh.sh" -- 'source /mnt/toolbox/configs/emby/secrets/api.env 2>/dev/null || source "$(ls /mnt/*/configs/emby/secrets/api.env 2>/dev/null | head -1)"; printf "%s\n%s\n%s\n%s\n" "${TMDB_API_KEY:-}" "${MDBLIST_API_KEY:-}" "${KINOPOISK_API_KEY:-}" "${OMDB_API_KEY:-}"' 2>/dev/null) || true
+        TMDB="${KEYS_IN[0]:-}"; MDBLIST="${KEYS_IN[1]:-}"; KINOPOISK="${KEYS_IN[2]:-}"; OMDB="${KEYS_IN[3]:-}"
+        unset KEYS_IN
         ;;
     env)
         [ -r "$ENV_FILE" ] || { echo "cannot read $ENV_FILE" >&2; exit 1; }
         # shellcheck disable=SC1090
         source "$ENV_FILE"
-        TMDB="${TMDB_API_KEY:-}"; MDBLIST="${MDBLIST_API_KEY:-}"; KINOPOISK="${KINOPOISK_API_KEY:-}"
+        TMDB="${TMDB_API_KEY:-}"; MDBLIST="${MDBLIST_API_KEY:-}"; KINOPOISK="${KINOPOISK_API_KEY:-}"; OMDB="${OMDB_API_KEY:-}"
         ;;
 esac
 
@@ -52,6 +56,7 @@ umask 077
     printf 'map $host $emby_tmdb_api_key      { default "%s"; }\n' "$TMDB"
     printf 'map $host $emby_mdblist_api_key   { default "%s"; }\n' "$MDBLIST"
     printf 'map $host $emby_kinopoisk_api_key { default "%s"; }\n' "$KINOPOISK"
+    printf 'map $host $emby_omdb_api_key      { default "%s"; }\n' "$OMDB"
 } > "$OUT"
 chmod 600 "$OUT"
-echo "written: $OUT (tmdb ${#TMDB} chars, mdblist ${#MDBLIST} chars, kinopoisk ${#KINOPOISK} chars)"
+echo "written: $OUT (tmdb ${#TMDB} chars, mdblist ${#MDBLIST} chars, kinopoisk ${#KINOPOISK} chars, omdb ${#OMDB} chars)"

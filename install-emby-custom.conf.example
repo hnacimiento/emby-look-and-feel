@@ -17,6 +17,9 @@
 
 # Docker container name and Emby base URL. Same as --container= / --emby-url=;
 # leave empty to auto-detect / be asked (or to reuse .emby-installer-state).
+# The URL must answer from THIS host. A container on a macvlan/ipvlan network
+# is unreachable from its own host, so use your reverse proxy instead, e.g.
+#   EMBY_URL="https://emby.example.com"
 EMBY_CONTAINER=""
 EMBY_URL=""
 
@@ -29,6 +32,12 @@ BACKUP_RETENTION_COUNT="5"
 # Pin Embymalism.css to a commit SHA or tag of github.com/v1rusnl/Embymalism.
 # Empty = always the latest commit of upstream's main branch.
 CSS_PIN_REF=""
+
+# Upstream keeps one CSS per Emby release (main = the newest Emby it
+# supports, older ones in Archive/Embymalism_<version>.css). 1 = if main's CSS
+# is for another Emby version than yours, install the archived one for your
+# version (when it exists). 0 = always main. Ignored when CSS_PIN_REF is set.
+CSS_AUTO_MATCH_EMBY_VERSION="1"
 
 # 1 = Embymalism becomes the default main theme for every user/device that
 # never picked a theme by hand (Dark stays selectable; the admin "Settings
@@ -63,7 +72,7 @@ ELSEWHERE_IGNORE_PROVIDERS=""
 CORS_PROXY_URL=""
 #CORS_PROXY_URL="https://emby.example.com/cors-proxy/"
 
-# API proxy: routes the addons' TMDB/MDBList/Kinopoisk calls through nginx,
+# API proxy: routes the addons' TMDB/MDBList/Kinopoisk/OMDb calls through nginx,
 # which adds the real API keys server-side and caches the answers for all
 # users. With this set, no third-party key is ever written into the JS.
 # Empty = direct calls from the browser with the keys embedded (upstream
@@ -96,6 +105,13 @@ SPOTLIGHT_VIGNETTE_BOTTOM="#1e1e1e"
 SPOTLIGHT_VIGNETTE_LEFT="#1e1e1e"
 SPOTLIGHT_VIGNETTE_RIGHT="#1e1e1e"
 SPOTLIGHT_PLAYBUTTON_COLOR="hsl(var(--theme-primary-color-hue), var(--theme-primary-color-saturation), var(--theme-primary-color-lightness))"
+# Curated Spotlight list, served at <emby>/web/<this filename>. Format: one
+# Emby item ID per line (alphanumeric), '#' for comments, blank lines ignored;
+# a BoxSet/collection ID expands to its contents. The installer downloads and
+# installs upstream's comment-only template by default (no item IDs = the
+# normal random selection, and no 404); edit the installed file to hand-pick
+# the Spotlight. If the file is ever removed, Spotlight.js falls back to random
+# and the /web/spotlight-items.txt 404 is harmless.
 SPOTLIGHT_CUSTOM_ITEMS_FILE="spotlight-items.txt"
 SPOTLIGHT_ENABLE_VIDEO_BACKDROP="true"
 SPOTLIGHT_START_MUTED="false"
@@ -122,6 +138,16 @@ SPOTLIGHT_ENABLE_ANI_LIST="true"
 # --- emby-ratings.js (rating badges) -----------------------------------------
 
 RATINGS_CACHE_TTL_HOURS="168"
+# Oscar/Emmy wins row. Needs OMDB_API_KEY in secrets/api.env (free key at
+# omdbapi.com; with API_PROXY_URL nginx must have it too: render-keys.sh).
+RATINGS_ENABLE_AWARDS="true"
+# Master switch for the external ratings (IMDb, Rotten Tomatoes, ...).
+RATINGS_ENABLE_CUSTOM_RATINGS="true"
+# Optional precomputed ratings/awards JSON installed as /web/ratings-data.json
+# (an object keyed "<movie|tv>_<tmdbId>"). Empty = an empty object is installed,
+# which only stops the addon's 404 retries.
+RATINGS_DATA_FILE=""
+#RATINGS_DATA_FILE="/mnt/pool/configs/emby/ratings-data.json"
 RATINGS_ENABLE_IMDB="true"
 RATINGS_ENABLE_TMDB="true"
 RATINGS_ENABLE_ROTTEN_TOMATOES="true"
