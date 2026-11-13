@@ -305,7 +305,8 @@ Every download's SHA256 is compared with `known-source-sha256sums.txt` (hashes o
 
 | Emby version | Status |
 |---|---|
-| `4.10.1.0` | ✅ Tested (current) |
+| `4.10.2.0` | ✅ Tested (current) |
+| `4.10.1.0` | ✅ Tested (earlier) |
 | `4.10.0.40` | ✅ Tested (earlier) |
 | `4.9.5.0` | ✅ Tested (earlier) |
 | Other `4.9.x`/`4.10.x` | ⚠️ Untested — likely fine; the version-mismatch warning tells you |
@@ -686,7 +687,8 @@ El SHA256 de cada descarga se compara con `known-source-sha256sums.txt` (hashes 
 
 | Versión de Emby | Estado |
 |---|---|
-| `4.10.1.0` | ✅ Probada (actual) |
+| `4.10.2.0` | ✅ Probada (actual) |
+| `4.10.1.0` | ✅ Probada (anterior) |
 | `4.10.0.40` | ✅ Probada (anterior) |
 | `4.9.5.0` | ✅ Probada (anterior) |
 | Otras `4.9.x`/`4.10.x` | ⚠️ No probadas — probablemente bien; el aviso de versión te lo dice |

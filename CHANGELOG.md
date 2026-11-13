@@ -13,6 +13,28 @@ with `./install-emby-custom.sh --version`.
 
 ### [Unreleased]
 
+### [1.3.1] - 2026-11-13
+
+Tested against Emby 4.10.2.0 (upstream: Embymalism CSS 4.10.2.0 of
+2026-10-30; the six addons and `spotlight-items.txt` are unchanged since
+1.2.0).
+
+#### Changed
+- `TESTED_EMBY_VERSION` is `4.10.2.0`; the compatibility table lists
+  4.10.2.0 as current and 4.10.1.0 as earlier. No code changes: the CSS
+  auto-match already picks upstream's `main` CSS on Emby 4.10.2.0 and the
+  archived `Embymalism_4.10.1.0.css` on 4.10.1.0.
+
+#### Notes
+- Upstream's CSS for 4.10.2.0 differs from the archived 4.10.1.0 one only in
+  its header. Its only visual change since 1.2.0 (2026-10-15) restyles the
+  favorite and played buttons in the season view: blue when active, white
+  when not, with a round background on hover.
+- Verified on a real upgrade: the watchdog with `--installer` detected
+  Emby 4.10.1.0 -> 4.10.2.0 and reinstalled on its own; a second install was
+  idempotent and the addons and `theme.css` served through nginx match the
+  container byte for byte.
+
 ### [1.3.0] - 2026-10-13
 
 #### Added
@@ -210,6 +232,28 @@ versiones siguen [Versionado Semántico](https://semver.org/lang/es/). El
 script informa su versión con `./install-emby-custom.sh --version`.
 
 ### [Sin publicar]
+
+### [1.3.1] - 2026-11-13
+
+Probado contra Emby 4.10.2.0 (upstream: CSS de Embymalism 4.10.2.0 del
+2026-10-30; los seis addons y `spotlight-items.txt` no cambiaron desde
+1.2.0).
+
+#### Cambiado
+- `TESTED_EMBY_VERSION` es `4.10.2.0`; la tabla de compatibilidad muestra
+  4.10.2.0 como actual y 4.10.1.0 como anterior. Sin cambios de código: la
+  elección automática del CSS ya toma el `main` de upstream en Emby 4.10.2.0
+  y el `Embymalism_4.10.1.0.css` archivado en 4.10.1.0.
+
+#### Notas
+- El CSS de upstream para 4.10.2.0 solo difiere del 4.10.1.0 archivado en la
+  cabecera. Su único cambio visual desde 1.2.0 (2026-10-15) restiliza los
+  botones de favorito y visto en la vista de temporada: azules si están
+  activos, blancos si no, con un círculo de fondo al pasar el mouse.
+- Verificado en una actualización real: el watchdog con `--installer`
+  detectó Emby 4.10.1.0 -> 4.10.2.0 y reinstaló solo; una segunda
+  instalación fue idempotente y los addons y el `theme.css` servidos por
+  nginx coinciden byte a byte con el contenedor.
 
 ### [1.3.0] - 2026-10-13
 

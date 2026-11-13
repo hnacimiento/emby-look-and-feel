@@ -113,7 +113,7 @@ DRY_RUN=0
 UNINSTALL=0
 STATUS_ONLY=0
 CHECK_UPDATES=0
-SCRIPT_VERSION="1.3.0"
+SCRIPT_VERSION="1.3.1"
 
 for arg in "$@"; do
     case "$arg" in
@@ -192,7 +192,7 @@ INDEX_CONTAINER_PATH="$DASHBOARD_CONTAINER_DIR/index.html"
 # Emby version this script was tested against. If the detected server is
 # different, a warning is printed (it does not block) -- see README, section
 # "Compatibility and future versions".
-TESTED_EMBY_VERSION="4.10.1.0"
+TESTED_EMBY_VERSION="4.10.2.0"
 
 # How many installs (backup + log + manifest + hashes + rollback + reapply
 # of that run) are kept. The oldest ones are deleted at the end of each
