@@ -106,7 +106,7 @@ The CSS is served from Emby's own `dashboard-ui` folder, so Emby never needs Git
 
 | File | Source | Gets edited? |
 |---|---|---|
-| `emby-elsewhere.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ TMDB key (or placeholder), region, provider filters, CORS proxy, UI translated German→English/Spanish (`ELSEWHERE_UI_LANGUAGE`) |
+| `emby-elsewhere.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ TMDB key (or placeholder), region, provider filters, CORS proxy forced empty (no TMDB website scraping), UI translated German→English/Spanish (`ELSEWHERE_UI_LANGUAGE`) |
 | `emby-linklogos.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | – |
 | `emby-media-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | – |
 | `emby-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ TMDB/MDBList/Kinopoisk/OMDb keys (or placeholder) + rating providers + awards + cache + proxies |
@@ -154,7 +154,7 @@ cp install-emby-custom.conf.example install-emby-custom.conf   # then edit it
 
 - Plain `KEY="value"` lines; the script **parses** the file (never `source`s it), accepts only the documented keys and validates every value by type — a typo or a `$(...)` in there is an error, not a silent default.
 - Precedence: command-line flag > config file > built-in default. `EMBY_CONTAINER`/`EMBY_URL` can live there instead of on every command line.
-- Keys are grouped by addon: theme (`CSS_PIN_REF`, `CSS_AUTO_MATCH_EMBY_VERSION`, `THEME_SET_AS_DEFAULT`), Elsewhere (region, UI language, provider filters), Reviews (languages, limits), Spotlight/ratings settings (including `RATINGS_ENABLE_AWARDS`, `RATINGS_ENABLE_CUSTOM_RATINGS`, `RATINGS_DATA_FILE`), backup retention, and the optional nginx proxies (`CORS_PROXY_URL`, `API_PROXY_URL`, `API_PROXY_RESOLVE_IP`).
+- Keys are grouped by addon: theme (`CSS_PIN_REF`, `CSS_AUTO_MATCH_EMBY_VERSION`, `THEME_SET_AS_DEFAULT`), Elsewhere (region, UI language, provider filters), Reviews (languages, limits), Spotlight/ratings settings (including `RATINGS_ENABLE_AWARDS`, `RATINGS_ENABLE_CUSTOM_RATINGS`, `RATINGS_DATA_FILE`), backup retention, the opt-in website scraping (`ENABLE_SITE_SCRAPING`, off by default) and the optional nginx proxies (`CORS_PROXY_URL`, `API_PROXY_URL`, `API_PROXY_RESOLVE_IP`).
 - **API keys never go in it** — they stay in `secrets/api.env` inside the Emby data path. The config file is gitignored; the tracked template is [install-emby-custom.conf.example](install-emby-custom.conf.example).
 
 ### First run — credentials wizard
@@ -285,7 +285,7 @@ Optional. Everything lives under [deploy/nginx/](deploy/nginx/), which mirrors t
 
 ### CORS proxy for the addons
 
-`Spotlight.js`, `emby-ratings.js` and `emby-elsewhere.js` have a `CORS_PROXY_URL` setting used only for the Rotten Tomatoes / AlloCiné scraping fallback and Elsewhere's "where to watch" deep links (sites without CORS). They append the full target URL: `https://emby.example.com/cors-proxy/https://www.rottentomatoes.com/m/inception`. `snippets/emby-cors-proxy.conf` is that `location`: **allow-list only** (`rottentomatoes.com`, `allocine.fr`, `themoviedb.org`), GET/HEAD, preflight answered locally, cookies stripped both ways, redirects rewritten back through the proxy, tolerant of nginx's `merge_slashes`, 24h disk cache with stale-while-revalidate. Set `CORS_PROXY_URL` in the config file (trailing slash) or leave it empty to disable the feature in the three addons.
+`Spotlight.js` and `emby-ratings.js` have a `CORS_PROXY_URL` setting used only for the Rotten Tomatoes / AlloCiné scraping fallback (sites without CORS). **Scraping is off by default:** the installer only passes the proxy to them with `ENABLE_SITE_SCRAPING="1"`, because both sites forbid automated access in their terms (Rotten Tomatoes Terms of Use s.6/s.10, AlloCiné CGU s.7.5/s.8.1). Off, Rotten Tomatoes scores still come from the MDBList/OMDb APIs; the Certified Fresh/Verified Hot badges and the AlloCiné ratings are not shown. `emby-elsewhere.js` has it too, but the installer always leaves it empty: its only use is scraping TMDB's website for per-service deep links, which TMDB's terms forbid and its API replaces with a link to the TMDB watch page (the "where to watch" title keeps linking there). They append the full target URL: `https://emby.example.com/cors-proxy/https://www.rottentomatoes.com/m/inception`. `snippets/emby-cors-proxy.conf` is that `location`: **allow-list only** (`rottentomatoes.com`, `allocine.fr`), GET/HEAD, preflight answered locally, cookies stripped both ways, redirects rewritten back through the proxy, tolerant of nginx's `merge_slashes`, 24h disk cache with stale-while-revalidate. To opt in, set `ENABLE_SITE_SCRAPING="1"` and `CORS_PROXY_URL` (trailing slash) in the config file; `deploy/nginx/check.sh --cors-upstream` then also tests the upstream fetches.
 
 ### API proxy: shared ratings cache + third-party keys out of the browser
 
@@ -339,7 +339,7 @@ By default it is also the **default main theme** (`THEME_SET_AS_DEFAULT="1"`: th
 
 ### emby-elsewhere.js — region, providers, translation
 
-`ELSEWHERE_DEFAULT_REGION` (config file) replaces upstream's `US`. `ELSEWHERE_DEFAULT_PROVIDERS` / `ELSEWHERE_IGNORE_PROVIDERS` (`|`-separated in the config file) show only / hide specific providers; both empty = show everything. `CORS_PROXY_URL` is always set to the configured value. Upstream ships the UI strings in German; `ELSEWHERE_UI_LANGUAGE` picks what to do with them: `en` (default) or `es` translate them **phrase by phrase** (template placeholders intact), `de` leaves them untouched; `translation-<timestamp>.txt` lists what was replaced and a non-fatal audit warns if a known German phrase survived (upstream changed its text).
+`ELSEWHERE_DEFAULT_REGION` (config file) replaces upstream's `US`. `ELSEWHERE_DEFAULT_PROVIDERS` / `ELSEWHERE_IGNORE_PROVIDERS` (`|`-separated in the config file) show only / hide specific providers; both empty = show everything. `CORS_PROXY_URL` is always set to empty: per-service deep links would need scraping TMDB's website, so the "where to watch" title links to TMDB's watch page instead (TMDB's supported path). Upstream ships the UI strings in German; `ELSEWHERE_UI_LANGUAGE` picks what to do with them: `en` (default) or `es` translate them **phrase by phrase** (template placeholders intact), `de` leaves them untouched; `translation-<timestamp>.txt` lists what was replaced and a non-fatal audit warns if a known German phrase survived (upstream changed its text).
 
 ### Spotlight.js — full configuration
 
@@ -488,7 +488,7 @@ El CSS se sirve desde la propia carpeta `dashboard-ui` de Emby, así que Emby no
 
 | Archivo | Origen | ¿Se edita? |
 |---|---|---|
-| `emby-elsewhere.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ key de TMDB (o placeholder), región, filtros de proveedores, CORS proxy, interfaz traducida alemán→inglés/español (`ELSEWHERE_UI_LANGUAGE`) |
+| `emby-elsewhere.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ key de TMDB (o placeholder), región, filtros de proveedores, CORS proxy siempre vacío (sin scraping del sitio de TMDB), interfaz traducida alemán→inglés/español (`ELSEWHERE_UI_LANGUAGE`) |
 | `emby-linklogos.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | – |
 | `emby-media-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | – |
 | `emby-ratings.js` | [Embymalism/Addons](https://github.com/v1rusnl/Embymalism) | ✅ keys de TMDB/MDBList/Kinopoisk/OMDb (o placeholder) + proveedores + premios + caché + proxies |
@@ -536,7 +536,7 @@ cp install-emby-custom.conf.example install-emby-custom.conf   # y editalo
 
 - Líneas `KEY="valor"`; el script **parsea** el archivo (nunca lo "sourcea"), acepta solo las claves documentadas y valida cada valor por tipo — un error de tipeo o un `$(...)` ahí es un error, no un default silencioso.
 - Precedencia: flag de línea de comando > archivo de configuración > default del script. `EMBY_CONTAINER`/`EMBY_URL` pueden vivir ahí en vez de en cada comando.
-- Claves agrupadas por addon: tema (`CSS_PIN_REF`, `CSS_AUTO_MATCH_EMBY_VERSION`, `THEME_SET_AS_DEFAULT`), Elsewhere (región, idioma de la interfaz, filtros de proveedores), Reviews (idiomas, límites), ajustes de Spotlight/ratings (incluidos `RATINGS_ENABLE_AWARDS`, `RATINGS_ENABLE_CUSTOM_RATINGS`, `RATINGS_DATA_FILE`), retención de backups y los proxies nginx opcionales (`CORS_PROXY_URL`, `API_PROXY_URL`, `API_PROXY_RESOLVE_IP`).
+- Claves agrupadas por addon: tema (`CSS_PIN_REF`, `CSS_AUTO_MATCH_EMBY_VERSION`, `THEME_SET_AS_DEFAULT`), Elsewhere (región, idioma de la interfaz, filtros de proveedores), Reviews (idiomas, límites), ajustes de Spotlight/ratings (incluidos `RATINGS_ENABLE_AWARDS`, `RATINGS_ENABLE_CUSTOM_RATINGS`, `RATINGS_DATA_FILE`), retención de backups el scraping de sitios web opcional (`ENABLE_SITE_SCRAPING`, apagado por defecto) y los proxies nginx opcionales (`CORS_PROXY_URL`, `API_PROXY_URL`, `API_PROXY_RESOLVE_IP`).
 - **Las API keys nunca van ahí** — quedan en `secrets/api.env` dentro de la ruta de datos de Emby. El archivo está gitignored; la plantilla versionada es [install-emby-custom.conf.example](install-emby-custom.conf.example).
 
 ### Primera corrida — wizard de credenciales
@@ -667,7 +667,7 @@ Opcional. Todo vive en [deploy/nginx/](deploy/nginx/), que espeja la estructura 
 
 ### CORS proxy para los addons
 
-`Spotlight.js`, `emby-ratings.js` y `emby-elsewhere.js` tienen un ajuste `CORS_PROXY_URL` que se usa solo para el fallback de scraping de Rotten Tomatoes / AlloCiné y los deep-links de "dónde ver" de Elsewhere (sitios sin CORS). Le concatenan la URL completa del destino: `https://emby.example.com/cors-proxy/https://www.rottentomatoes.com/m/inception`. `snippets/emby-cors-proxy.conf` es esa `location`: **solo lista blanca** (`rottentomatoes.com`, `allocine.fr`, `themoviedb.org`), GET/HEAD, preflight respondido localmente, cookies vaciadas en ambos sentidos, redirects reescritos para volver por el proxy, tolerante al `merge_slashes` de nginx, caché en disco de 24 h con stale-while-revalidate. Configurá `CORS_PROXY_URL` en el archivo de configuración (con barra final) o dejalo vacío para desactivar la función en los tres addons.
+`Spotlight.js` y `emby-ratings.js` tienen un ajuste `CORS_PROXY_URL` que se usa solo para el fallback de scraping de Rotten Tomatoes / AlloCiné (sitios sin CORS). **El scraping está apagado por defecto:** el instalador solo les pasa el proxy con `ENABLE_SITE_SCRAPING="1"`, porque los dos sitios prohíben el acceso automatizado en sus términos (Términos de uso de Rotten Tomatoes §6/§10, CGU de AlloCiné §7.5/§8.1). Apagado, los puntajes de Rotten Tomatoes siguen llegando por las APIs de MDBList/OMDb; no se muestran los sellos Certified Fresh/Verified Hot ni los ratings de AlloCiné. `emby-elsewhere.js` también lo tiene, pero el instalador siempre lo deja vacío: su único uso es hacer scraping del sitio de TMDB para sacar deep-links por servicio, algo que los términos de TMDB prohíben y que su API reemplaza con un enlace a la página "watch" de TMDB (el título de "dónde ver" sigue enlazando ahí). Le concatenan la URL completa del destino: `https://emby.example.com/cors-proxy/https://www.rottentomatoes.com/m/inception`. `snippets/emby-cors-proxy.conf` es esa `location`: **solo lista blanca** (`rottentomatoes.com`, `allocine.fr`), GET/HEAD, preflight respondido localmente, cookies vaciadas en ambos sentidos, redirects reescritos para volver por el proxy, tolerante al `merge_slashes` de nginx, caché en disco de 24 h con stale-while-revalidate. Para activarlo, poné `ENABLE_SITE_SCRAPING="1"` y `CORS_PROXY_URL` (con barra final) en el archivo de configuración; `deploy/nginx/check.sh --cors-upstream` además prueba las descargas de esos sitios.
 
 ### API proxy: caché compartida de ratings + keys de terceros fuera del navegador
 
@@ -721,7 +721,7 @@ Por defecto también queda como **tema principal por defecto** (`THEME_SET_AS_DE
 
 ### emby-elsewhere.js — región, proveedores, traducción
 
-`ELSEWHERE_DEFAULT_REGION` (archivo de configuración) reemplaza el `US` de upstream. `ELSEWHERE_DEFAULT_PROVIDERS` / `ELSEWHERE_IGNORE_PROVIDERS` (separados por `|`) muestran solo / ocultan proveedores puntuales; ambos vacíos = mostrar todo. `CORS_PROXY_URL` siempre se fija al valor configurado. Upstream trae los textos de la interfaz en alemán; `ELSEWHERE_UI_LANGUAGE` decide qué hacer con ellos: `en` (default) o `es` los traducen **frase por frase** (placeholders intactos), `de` los deja intactos; `translation-<timestamp>.txt` lista lo reemplazado y una auditoría no fatal avisa si sobrevivió una frase conocida en alemán (upstream cambió su texto).
+`ELSEWHERE_DEFAULT_REGION` (archivo de configuración) reemplaza el `US` de upstream. `ELSEWHERE_DEFAULT_PROVIDERS` / `ELSEWHERE_IGNORE_PROVIDERS` (separados por `|`) muestran solo / ocultan proveedores puntuales; ambos vacíos = mostrar todo. `CORS_PROXY_URL` siempre se fija vacío: los deep-links por servicio requerirían scraping del sitio de TMDB, así que el título de "dónde ver" enlaza a la página "watch" de TMDB (el camino que TMDB soporta). Upstream trae los textos de la interfaz en alemán; `ELSEWHERE_UI_LANGUAGE` decide qué hacer con ellos: `en` (default) o `es` los traducen **frase por frase** (placeholders intactos), `de` los deja intactos; `translation-<timestamp>.txt` lista lo reemplazado y una auditoría no fatal avisa si sobrevivió una frase conocida en alemán (upstream cambió su texto).
 
 ### Spotlight.js — configuración completa
 

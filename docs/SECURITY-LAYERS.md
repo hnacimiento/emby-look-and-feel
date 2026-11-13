@@ -17,7 +17,7 @@ browser ──TLS──> nginx vhost ──> [host check] ──> [location matc
                                                      │
               /emby/…, /web/…  ── admin paths LAN-only ── method gate (WAN) ── Emby
               /api-proxy/…     ── client-origin gate ── rate limit ── key injection ── cache ── TMDB/MDBList/Kinopoisk/OMDb
-              /cors-proxy/…    ── target allow-list ── method gate ── cache ── RT/AlloCiné/TMDB web
+              /cors-proxy/…    ── target allow-list ── method gate ── cache ── RT/AlloCiné web (opt-in)
                                                      │
                        fail2ban (reads the access logs of the three paths above)
 ```
@@ -96,8 +96,8 @@ keep `inactive`/`max_size` bounded (30d / 512 MB); watch hit ratio with
 `deploy/nginx/check.sh`.
 
 ### 10. CORS proxy — target allow-list *(this project)*
-`/cors-proxy/<url>` forwards only to `rottentomatoes.com`, `allocine.fr`,
-`themoviedb.org` (`403` otherwise), GET/HEAD only, cookies stripped both
+`/cors-proxy/<url>` forwards only to `rottentomatoes.com` and `allocine.fr`
+(`403` otherwise; TMDB's website is excluded on purpose), GET/HEAD only, cookies stripped both
 ways, target CSP/frame headers removed, redirects rewritten back through
 the proxy (and therefore through the allow-list again). Stops: SSRF-style
 use of the proxy to reach arbitrary hosts, cookie leakage.
@@ -223,7 +223,7 @@ navegador ──TLS──> vhost nginx ──> [chequeo de host] ──> [match 
                                                           │
               /emby/…, /web/…  ── rutas admin solo LAN ── filtro de métodos (WAN) ── Emby
               /api-proxy/…     ── origen del cliente ── rate limit ── inyección de key ── caché ── TMDB/MDBList/Kinopoisk/OMDb
-              /cors-proxy/…    ── lista blanca de destinos ── filtro de métodos ── caché ── RT/AlloCiné/TMDB web
+              /cors-proxy/…    ── lista blanca de destinos ── filtro de métodos ── caché ── RT/AlloCiné web (opcional)
                                                           │
                           fail2ban (lee los access logs de las tres rutas de arriba)
 ```
@@ -306,8 +306,8 @@ Recomendado: `inactive`/`max_size` acotados (30d / 512 MB); mirar el hit
 ratio con `deploy/nginx/check.sh`.
 
 ### 10. CORS proxy — lista blanca de destinos *(este proyecto)*
-`/cors-proxy/<url>` reenvía solo a `rottentomatoes.com`, `allocine.fr`,
-`themoviedb.org` (`403` si no), solo GET/HEAD, cookies vaciadas en ambos
+`/cors-proxy/<url>` reenvía solo a `rottentomatoes.com` y `allocine.fr`
+(`403` si no; el sitio de TMDB queda fuera a propósito), solo GET/HEAD, cookies vaciadas en ambos
 sentidos, CSP/frame del destino eliminados, redirects reescritos para volver
 a pasar por el proxy (y por la lista blanca). Frena: uso tipo SSRF del proxy
 para llegar a hosts arbitrarios, fuga de cookies.

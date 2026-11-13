@@ -23,6 +23,8 @@ assert_exit_code 0 "THEME_SET_AS_DEFAULT is allowed" config_key_allowed THEME_SE
 assert_exit_code 1 "TMDB_API_KEY is NOT allowed (secrets live in secrets/api.env)" config_key_allowed TMDB_API_KEY
 assert_exit_code 1 "EMBY_API_KEY is NOT allowed" config_key_allowed EMBY_API_KEY
 assert_exit_code 1 "JS_URLS (technical constant) is NOT allowed" config_key_allowed JS_URLS
+assert_exit_code 0 "ENABLE_SITE_SCRAPING is allowed" config_key_allowed ENABLE_SITE_SCRAPING
+assert_exit_code 0 "ENABLE_SITE_SCRAPING=1 is a valid value" config_validate_value ENABLE_SITE_SCRAPING 1
 assert_eq "$(grep -c . <<< "$(printf '%s\n' "${CONFIG_KEYS[@]}")")" "${#CONFIG_KEYS[@]}" "CONFIG_KEYS loaded from the script ($(printf '%s' "${#CONFIG_KEYS[@]}") keys)"
 
 suite "every documented key in install-emby-custom.conf.example is allowed and its value valid"
@@ -50,7 +52,7 @@ assert_eq "$SPOTLIGHT_PLAYBUTTON_COLOR" "hsl(var(--x), 1%, 2%)" "parentheses/com
 rm -f "$CF"
 
 suite "load_config_file: rejects unknown keys, bad types and shell metacharacters"
-for bad in 'TMDB_API_KEY="abc"' 'NOT_A_KEY="1"' 'THEME_SET_AS_DEFAULT="yes"' 'REVIEWS_MAX_REVIEWS="ten"' 'CORS_PROXY_URL="https://emby.example.com/cors-proxy"' 'API_PROXY_RESOLVE_IP="nginx.local"' 'ELSEWHERE_DEFAULT_REGION="Argentina"' 'ELSEWHERE_UI_LANGUAGE="fr"' 'SPOTLIGHT_ENABLE_IMDB="1"' 'EMBY_URL="http://emby.example.com/web/"' 'SPOTLIGHT_VIDEO_VOLUME="1.5"' 'SPOTLIGHT_PREFERRED_VIDEO_QUALITY="4k"' 'REVIEWS_PRIMARY_LANGUAGE="$(rm -rf /)"' 'CSS_PIN_REF="`id`"' 'lowercase="x"' 'JUSTTEXT'; do
+for bad in 'TMDB_API_KEY="abc"' 'NOT_A_KEY="1"' 'THEME_SET_AS_DEFAULT="yes"' 'REVIEWS_MAX_REVIEWS="ten"' 'CORS_PROXY_URL="https://emby.example.com/cors-proxy"' 'API_PROXY_RESOLVE_IP="nginx.local"' 'ELSEWHERE_DEFAULT_REGION="Argentina"' 'ELSEWHERE_UI_LANGUAGE="fr"' 'SPOTLIGHT_ENABLE_IMDB="1"' 'EMBY_URL="http://emby.example.com/web/"' 'SPOTLIGHT_VIDEO_VOLUME="1.5"' 'SPOTLIGHT_PREFERRED_VIDEO_QUALITY="4k"' 'ENABLE_SITE_SCRAPING="true"' 'ENABLE_SITE_SCRAPING="yes"''REVIEWS_PRIMARY_LANGUAGE="$(rm -rf /)"' 'CSS_PIN_REF="`id`"' 'lowercase="x"' 'JUSTTEXT'; do
     CF="$(write_conf "$bad")"
     assert_exit_code 1 "rejected: $bad" load_config_file "$CF"
     rm -f "$CF"

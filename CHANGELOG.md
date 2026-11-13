@@ -13,6 +13,32 @@ with `./install-emby-custom.sh --version`.
 
 ### [Unreleased]
 
+### [1.3.2] - 2026-11-13
+
+#### Changed
+- `emby-elsewhere.js` no longer gets the CORS proxy: the installer always
+  sets its `CORS_PROXY_URL` to empty. Its only use was downloading TMDB's
+  website "watch" page to extract per-service deep links. TMDB's API does not
+  return deep links on purpose and asks apps to link to that page instead;
+  TMDB's website Terms of Use forbid scraping it; and www.themoviedb.org now
+  answers proxied requests with an anti-bot challenge (403), so the deep
+  links had already stopped working. The "where to watch" title still links
+  to the TMDB watch page, where the real links are.
+- nginx CORS proxy: `themoviedb.org` removed from the allow-list (now only
+  `rottentomatoes.com` and `allocine.fr`).
+- Website scraping is now off by default. New config key
+  `ENABLE_SITE_SCRAPING` (`0` by default): only with `1` (and
+  `CORS_PROXY_URL` set) do `Spotlight.js` and `emby-ratings.js` get the CORS
+  proxy. Rotten Tomatoes (Terms of Use s.6/s.10) and AlloCine (CGU
+  s.7.5/s.8.1) forbid automated access; the config example and the installer
+  carry those disclaimers. Off, Rotten Tomatoes scores still come from the
+  MDBList/OMDb APIs; the Certified Fresh/Verified Hot badges and the AlloCine
+  ratings are not shown. The manifest records `site_scraping_enabled`.
+- `deploy/nginx/check.sh`: the redirect checks use Rotten Tomatoes (relative
+  and absolute redirects), plus a check that TMDB's website gets 403. The
+  checks that fetch Rotten Tomatoes / AlloCine pages only run with the new
+  `--cors-upstream` flag.
+
 ### [1.3.1] - 2026-11-13
 
 Tested against Emby 4.10.2.0 (upstream: Embymalism CSS 4.10.2.0 of
@@ -232,6 +258,33 @@ versiones siguen [Versionado Semántico](https://semver.org/lang/es/). El
 script informa su versión con `./install-emby-custom.sh --version`.
 
 ### [Sin publicar]
+
+### [1.3.2] - 2026-11-13
+
+#### Cambiado
+- `emby-elsewhere.js` ya no recibe el proxy CORS: el instalador siempre deja
+  su `CORS_PROXY_URL` vacío. Su único uso era bajar la página "watch" del
+  sitio de TMDB para extraer deep-links por servicio. La API de TMDB no
+  devuelve deep-links a propósito y pide enlazar a esa página; los términos
+  de uso del sitio de TMDB prohíben hacerle scraping; y www.themoviedb.org
+  ahora responde a los pedidos del proxy con un desafío anti-bot (403), así
+  que los deep-links ya habían dejado de funcionar. El título de "dónde ver"
+  sigue enlazando a la página de TMDB, donde están los enlaces reales.
+- Proxy CORS de nginx: `themoviedb.org` sale de la lista blanca (quedan solo
+  `rottentomatoes.com` y `allocine.fr`).
+- El scraping de sitios web queda apagado por defecto. Nueva clave de
+  configuración `ENABLE_SITE_SCRAPING` (`0` por defecto): solo con `1` (y
+  `CORS_PROXY_URL` configurado) `Spotlight.js` y `emby-ratings.js` reciben el
+  proxy CORS. Rotten Tomatoes (Términos de uso §6/§10) y AlloCiné (CGU
+  §7.5/§8.1) prohíben el acceso automatizado; el ejemplo de configuración y
+  el instalador llevan esas advertencias. Apagado, los puntajes de Rotten
+  Tomatoes siguen llegando por las APIs de MDBList/OMDb; no se muestran los
+  sellos Certified Fresh/Verified Hot ni los ratings de AlloCiné. El
+  manifest registra `site_scraping_enabled`.
+- `deploy/nginx/check.sh`: las pruebas de redirección usan Rotten Tomatoes
+  (redirección relativa y absoluta), más una prueba de que el sitio de TMDB
+  recibe 403. Las pruebas que bajan páginas de Rotten Tomatoes / AlloCiné
+  solo corren con el nuevo flag `--cors-upstream`.
 
 ### [1.3.1] - 2026-11-13
 

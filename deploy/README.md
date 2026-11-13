@@ -43,7 +43,7 @@ nginx must be built with `--with-http_auth_request_module` (check `nginx -V`); `
 
 | File (under `deploy/nginx/etc/`) | Context | What |
 |---|---|---|
-| `nginx/snippets/emby-cors-proxy.conf` | `server` | Allow-listed CORS proxy for the Rotten Tomatoes / AlloCiné fallback and Elsewhere deep links |
+| `nginx/snippets/emby-cors-proxy.conf` | `server` | Allow-listed CORS proxy for the Rotten Tomatoes / AlloCiné fallback |
 | `nginx/conf.d/emby-api-cache.conf` | `http` | API proxy: cache zone, key-stripping map, client-origin maps (nothing hardcoded), rate-limit zone, include of the keys file |
 | `nginx/snippets/emby-api-proxy.conf` | `server` | `location = /_emby_auth` (session check via `auth_request`: LAN source IP or the `emby_proxy_token` cookie validated against Emby) + the four `location ^~ /api-proxy/{mdblist,tmdb,kinopoisk,omdb}/` (`omdb/` answers `503` when there is no OMDb key) |
 | `nginx/snippets/emby-api-common.conf` | — | Common body included by each API-proxy location |
@@ -63,11 +63,11 @@ Scripts in `deploy/nginx/`:
 ```bash
 ./deploy/nginx/render-keys.sh --from-truenas --out /tmp/keys.conf   # keys file from the NAS's secrets/api.env, never printed
 ./deploy/nginx/install.sh --vhost /etc/nginx/conf.d/emby.conf --keys /tmp/keys.conf --fail2ban
-./deploy/nginx/check.sh https://emby.example.com --lan-origin http://192.168.1.10:8096
+./deploy/nginx/check.sh https://emby.example.com --lan-origin http://192.168.1.10:8096   # add --cors-upstream only with ENABLE_SITE_SCRAPING=1
 ./deploy/nginx-ssh.sh -- /path/to/purge-assets.sh                  # after an install that changed the CSS, drop nginx's cached theme.css (--all-web: every /web/ entry)
 ```
 
-`install.sh` uploads everything as `.new`, backs up the vhost, swaps the files, runs `nginx -t` **with the real config path** (`--nginx-conf` if it is not `/etc/nginx/nginx.conf`), reloads only on success and reverts everything otherwise; with `--fail2ban` it also installs the jail and reloads fail2ban. `check.sh` is the external test matrix (allowed targets 200 + CORS header + cache HIT, OMDb 200 or `503` if no key, denied 403, preflight 204, POST 405, no key leaks). Always run `check.sh` after `install.sh`.
+`install.sh` uploads everything as `.new`, backs up the vhost, swaps the files, runs `nginx -t` **with the real config path** (`--nginx-conf` if it is not `/etc/nginx/nginx.conf`), reloads only on success and reverts everything otherwise; with `--fail2ban` it also installs the jail and reloads fail2ban. `check.sh` is the external test matrix (allowed API targets 200 + CORS header + cache HIT; Rotten Tomatoes/AlloCiné pages only with `--cors-upstream`; OMDb 200 or `503` if no key, denied 403, preflight 204, POST 405, no key leaks). Always run `check.sh` after `install.sh`.
 
 If your nginx layout differs (Debian `sites-available`, Nginx Proxy Manager, Docker): the snippets are plain `location` blocks and the `conf.d` file is plain `http`-context directives — put them wherever your setup includes such files (NPM: the snippets go into the proxy host's *Custom locations* / *Advanced* tab; the `http`-context file into a custom `conf.d` include).
 
@@ -116,7 +116,7 @@ nginx tiene que estar compilado con `--with-http_auth_request_module` (ver `ngin
 
 | Archivo (bajo `deploy/nginx/etc/`) | Contexto | Qué es |
 |---|---|---|
-| `nginx/snippets/emby-cors-proxy.conf` | `server` | CORS proxy con lista blanca para el fallback de Rotten Tomatoes / AlloCiné y los deep-links de Elsewhere |
+| `nginx/snippets/emby-cors-proxy.conf` | `server` | CORS proxy con lista blanca para el fallback de Rotten Tomatoes / AlloCiné |
 | `nginx/conf.d/emby-api-cache.conf` | `http` | API proxy: zona de caché, map que quita la key, maps de origen del cliente (nada hardcodeado), zona de rate limit, include del archivo de keys |
 | `nginx/snippets/emby-api-proxy.conf` | `server` | `location = /_emby_auth` (chequeo de sesión vía `auth_request`: IP de origen en la LAN o la cookie `emby_proxy_token` validada contra Emby) + las cuatro `location ^~ /api-proxy/{mdblist,tmdb,kinopoisk,omdb}/` (`omdb/` responde `503` si no hay key de OMDb) |
 | `nginx/snippets/emby-api-common.conf` | — | Cuerpo común incluido por cada location del API proxy |
@@ -136,11 +136,11 @@ Scripts en `deploy/nginx/`:
 ```bash
 ./deploy/nginx/render-keys.sh --from-truenas --out /tmp/keys.conf   # archivo de keys desde el secrets/api.env del NAS, sin imprimirlas
 ./deploy/nginx/install.sh --vhost /etc/nginx/conf.d/emby.conf --keys /tmp/keys.conf --fail2ban
-./deploy/nginx/check.sh https://emby.example.com --lan-origin http://192.168.1.10:8096
+./deploy/nginx/check.sh https://emby.example.com --lan-origin http://192.168.1.10:8096   # --cors-upstream solo con ENABLE_SITE_SCRAPING=1
 ./deploy/nginx-ssh.sh -- /ruta/a/purge-assets.sh                  # tras una instalación que cambió el CSS, descartar el theme.css cacheado (--all-web: todo /web/)
 ```
 
-`install.sh` sube todo como `.new`, respalda el vhost, intercambia los archivos, corre `nginx -t` **con la ruta real de la config** (`--nginx-conf` si no es `/etc/nginx/nginx.conf`), recarga solo si pasa y revierte todo si no; con `--fail2ban` instala además la jail y recarga fail2ban. `check.sh` es la matriz de pruebas externa (destinos permitidos 200 + header CORS + HIT de caché, OMDb 200 o `503` si no hay key, denegados 403, preflight 204, POST 405, sin fugas de keys). Corré siempre `check.sh` después de `install.sh`.
+`install.sh` sube todo como `.new`, respalda el vhost, intercambia los archivos, corre `nginx -t` **con la ruta real de la config** (`--nginx-conf` si no es `/etc/nginx/nginx.conf`), recarga solo si pasa y revierte todo si no; con `--fail2ban` instala además la jail y recarga fail2ban. `check.sh` es la matriz de pruebas externa (destinos de API permitidos 200 + header CORS + HIT de caché; páginas de Rotten Tomatoes/AlloCiné solo con `--cors-upstream`; OMDb 200 o `503` si no hay key, denegados 403, preflight 204, POST 405, sin fugas de keys). Corré siempre `check.sh` después de `install.sh`.
 
 Si tu nginx tiene otra estructura (Debian `sites-available`, Nginx Proxy Manager, Docker): los snippets son bloques `location` planos y el archivo de `conf.d` son directivas planas de contexto `http` — ponelos donde tu instalación incluya ese tipo de archivos (NPM: los snippets van en *Custom locations* / *Advanced* del proxy host; el archivo de contexto `http` en un include propio de `conf.d`).
 

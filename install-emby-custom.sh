@@ -113,7 +113,7 @@ DRY_RUN=0
 UNINSTALL=0
 STATUS_ONLY=0
 CHECK_UPDATES=0
-SCRIPT_VERSION="1.3.1"
+SCRIPT_VERSION="1.3.2"
 
 for arg in "$@"; do
     case "$arg" in
@@ -345,15 +345,30 @@ ELSEWHERE_UI_LANGUAGE="en"
 ELSEWHERE_DEFAULT_PROVIDERS=()
 ELSEWHERE_IGNORE_PROVIDERS=()
 
-# CORS proxy for the 3 addons that support it (Spotlight, emby-ratings,
-# emby-elsewhere). It has NOTHING to do with the API keys: it only enables
-# the Rotten Tomatoes/AlloCine scraping fallback and Elsewhere's
-# "where to watch" deep links (sites without CORS). The addons concatenate
+# CORS proxy for Spotlight and emby-ratings. It has NOTHING to do with the
+# API keys: it only enables the Rotten Tomatoes/AlloCine scraping fallback
+# (sites without CORS). emby-elsewhere.js also has the setting, but it is
+# always left empty (see ELSEWHERE_CORS_PROXY_URL). The addons concatenate
 # CORS_PROXY_URL + the full destination URL, hence the trailing slash.
 # The proxy is the allowlisted location in deploy/nginx/etc/nginx/snippets/emby-cors-proxy.conf
-# (see README, "Reverse proxy"). Empty = feature disabled in all 3.
+# (see README, "Reverse proxy"). Empty = feature disabled in both.
 # Set it in the config file, e.g. "https://emby.example.com/cors-proxy/".
 CORS_PROXY_URL=""
+
+# Website scraping through CORS_PROXY_URL is OFF unless this is 1. Both
+# sites forbid automated access in their terms, so it is opt-in and at the
+# operator's own risk:
+#   - Rotten Tomatoes (Fandango Terms of Use, s.6 and s.10): no robots,
+#     scripts, spiders, data extractors or systematic retrieval of data.
+#     Off, the critics and audience scores still come from the MDBList and
+#     OMDb APIs; only the "Certified Fresh"/"Verified Hot" badges are lost.
+#   - AlloCine (CGU s.7.5 and s.8.1): private consultation only; no
+#     automated systems (robot, spider, offline reader) and no data
+#     collection to build a database. Off, the AlloCine press/audience
+#     ratings are not shown (AlloCine has no public API).
+# TMDB's website is never scraped, whatever this says (see
+# ELSEWHERE_CORS_PROXY_URL). With 1, CORS_PROXY_URL must also be set.
+ENABLE_SITE_SCRAPING="0"
 
 # API proxy with shared cache and server-side keys (nginx, see
 # deploy/nginx/etc/nginx/snippets/emby-api-proxy.conf). With a value: in the addons the
@@ -468,7 +483,7 @@ CONFIG_KEYS=(
     CSS_PIN_REF CSS_AUTO_MATCH_EMBY_VERSION THEME_SET_AS_DEFAULT
     ELSEWHERE_DEFAULT_REGION ELSEWHERE_UI_LANGUAGE
     ELSEWHERE_DEFAULT_PROVIDERS ELSEWHERE_IGNORE_PROVIDERS
-    CORS_PROXY_URL API_PROXY_URL API_PROXY_RESOLVE_IP
+    ENABLE_SITE_SCRAPING CORS_PROXY_URL API_PROXY_URL API_PROXY_RESOLVE_IP
     REVIEWS_PRIMARY_LANGUAGE REVIEWS_SECONDARY_LANGUAGE REVIEWS_MAX_REVIEWS
     REVIEWS_PREVIEW_LENGTH REVIEWS_EXPANDED_BY_DEFAULT REVIEWS_SHOW_LANGUAGE_FLAGS
     SPOTLIGHT_LIMIT SPOTLIGHT_AUTOPLAY_INTERVAL SPOTLIGHT_VIGNETTE_TOP
@@ -490,7 +505,7 @@ CONFIG_KEYS=(
     RATINGS_ENABLE_MY_ANIME_LIST RATINGS_ENABLE_ANI_LIST
 )
 # Type per key (everything else is free text without shell metacharacters).
-CONFIG_BOOL_KEYS=" THEME_SET_AS_DEFAULT CSS_AUTO_MATCH_EMBY_VERSION RATINGS_ENABLE_AWARDS RATINGS_ENABLE_CUSTOM_RATINGS REVIEWS_EXPANDED_BY_DEFAULT REVIEWS_SHOW_LANGUAGE_FLAGS SPOTLIGHT_ENABLE_VIDEO_BACKDROP SPOTLIGHT_START_MUTED SPOTLIGHT_WAIT_FOR_TRAILER_TO_END SPOTLIGHT_ENABLE_MOBILE_VIDEO SPOTLIGHT_ENABLE_SPONSOR_BLOCK SPOTLIGHT_ENABLE_CUSTOM_RATINGS SPOTLIGHT_ENABLE_IMDB SPOTLIGHT_ENABLE_TMDB SPOTLIGHT_ENABLE_ROTTEN_TOMATOES SPOTLIGHT_ENABLE_METACRITIC SPOTLIGHT_ENABLE_TRAKT SPOTLIGHT_ENABLE_LETTERBOXD SPOTLIGHT_ENABLE_ROGER_EBERT SPOTLIGHT_ENABLE_ALLOCINE SPOTLIGHT_ENABLE_KINOPOISK SPOTLIGHT_ENABLE_MY_ANIME_LIST SPOTLIGHT_ENABLE_ANI_LIST RATINGS_ENABLE_IMDB RATINGS_ENABLE_TMDB RATINGS_ENABLE_ROTTEN_TOMATOES RATINGS_ENABLE_METACRITIC RATINGS_ENABLE_TRAKT RATINGS_ENABLE_LETTERBOXD RATINGS_ENABLE_ROGER_EBERT RATINGS_ENABLE_ALLOCINE RATINGS_ENABLE_KINOPOISK RATINGS_ENABLE_MY_ANIME_LIST RATINGS_ENABLE_ANI_LIST "
+CONFIG_BOOL_KEYS=" THEME_SET_AS_DEFAULT CSS_AUTO_MATCH_EMBY_VERSION ENABLE_SITE_SCRAPING RATINGS_ENABLE_AWARDS RATINGS_ENABLE_CUSTOM_RATINGS REVIEWS_EXPANDED_BY_DEFAULT REVIEWS_SHOW_LANGUAGE_FLAGS SPOTLIGHT_ENABLE_VIDEO_BACKDROP SPOTLIGHT_START_MUTED SPOTLIGHT_WAIT_FOR_TRAILER_TO_END SPOTLIGHT_ENABLE_MOBILE_VIDEO SPOTLIGHT_ENABLE_SPONSOR_BLOCK SPOTLIGHT_ENABLE_CUSTOM_RATINGS SPOTLIGHT_ENABLE_IMDB SPOTLIGHT_ENABLE_TMDB SPOTLIGHT_ENABLE_ROTTEN_TOMATOES SPOTLIGHT_ENABLE_METACRITIC SPOTLIGHT_ENABLE_TRAKT SPOTLIGHT_ENABLE_LETTERBOXD SPOTLIGHT_ENABLE_ROGER_EBERT SPOTLIGHT_ENABLE_ALLOCINE SPOTLIGHT_ENABLE_KINOPOISK SPOTLIGHT_ENABLE_MY_ANIME_LIST SPOTLIGHT_ENABLE_ANI_LIST RATINGS_ENABLE_IMDB RATINGS_ENABLE_TMDB RATINGS_ENABLE_ROTTEN_TOMATOES RATINGS_ENABLE_METACRITIC RATINGS_ENABLE_TRAKT RATINGS_ENABLE_LETTERBOXD RATINGS_ENABLE_ROGER_EBERT RATINGS_ENABLE_ALLOCINE RATINGS_ENABLE_KINOPOISK RATINGS_ENABLE_MY_ANIME_LIST RATINGS_ENABLE_ANI_LIST "
 CONFIG_INT_KEYS=" BACKUP_RETENTION_COUNT REVIEWS_MAX_REVIEWS REVIEWS_PREVIEW_LENGTH SPOTLIGHT_LIMIT SPOTLIGHT_AUTOPLAY_INTERVAL SPOTLIGHT_CACHE_TTL_HOURS RATINGS_CACHE_TTL_HOURS "
 CONFIG_URL_SLASH_KEYS=" CORS_PROXY_URL API_PROXY_URL "
 
@@ -511,7 +526,7 @@ config_validate_value() {
     esac
     if [[ "$CONFIG_BOOL_KEYS" == *" $key "* ]]; then
         case "$key" in
-            THEME_SET_AS_DEFAULT|CSS_AUTO_MATCH_EMBY_VERSION)
+            THEME_SET_AS_DEFAULT|CSS_AUTO_MATCH_EMBY_VERSION|ENABLE_SITE_SCRAPING)
                 [[ "$value" =~ ^[01]$ ]] || { echo "must be 0 or 1"; return 1; } ;;
             *)
                 [[ "$value" =~ ^(true|false)$ ]] || { echo "must be true or false"; return 1; } ;;
@@ -1107,9 +1122,22 @@ if [ -n "$CSS_PIN_REF" ]; then
 else
     CSS_URL="https://raw.githubusercontent.com/v1rusnl/Embymalism/refs/heads/main/Embymalism.css"
 fi
-SPOTLIGHT_CORS_PROXY_URL="$CORS_PROXY_URL"
-RATINGS_CORS_PROXY_URL="$CORS_PROXY_URL"
-ELSEWHERE_CORS_PROXY_URL="$CORS_PROXY_URL"
+# Spotlight and emby-ratings only get the proxy when scraping is opted in.
+if [ "$ENABLE_SITE_SCRAPING" = "1" ]; then
+    SPOTLIGHT_CORS_PROXY_URL="$CORS_PROXY_URL"
+    RATINGS_CORS_PROXY_URL="$CORS_PROXY_URL"
+else
+    SPOTLIGHT_CORS_PROXY_URL=""
+    RATINGS_CORS_PROXY_URL=""
+fi
+# emby-elsewhere.js is never given the CORS proxy. Its only use of it is to
+# download TMDB's website "watch" page and extract per-service deep links.
+# TMDB's API intentionally does not return deep links and asks apps to link
+# to that page instead; its website Terms of Use forbid scraping it, and
+# www.themoviedb.org answers proxied requests with an anti-bot challenge
+# (403). The addon keeps linking its "where to watch" title to that TMDB
+# page, which is the supported path.
+ELSEWHERE_CORS_PROXY_URL=""
 
 if [ "$PRINT_CONFIG" = "1" ]; then
     echo "# Effective configuration (CLI > ${CONFIG_FILE_USED:-no config file} > built-in defaults)"
@@ -2780,8 +2808,8 @@ set_or_die_const_string "$ELSEWHERE" "DEFAULT_REGION" "$ELSEWHERE_DEFAULT_REGION
 ok "DEFAULT_REGION = $ELSEWHERE_DEFAULT_REGION"
 
 # Upstream ships 'const CORS_PROXY_URL = '';' (deep links disabled). It is
-# ALWAYS set to the configured value (empty included) so the installed file
-# never depends on whatever upstream ships that day.
+# ALWAYS set explicitly (to empty, see ELSEWHERE_CORS_PROXY_URL) so the
+# installed file never depends on whatever upstream ships that day.
 set_or_die_const_string "$ELSEWHERE" "CORS_PROXY_URL" "$ELSEWHERE_CORS_PROXY_URL"
 if [ -n "$ELSEWHERE_CORS_PROXY_URL" ]; then
     ok "CORS_PROXY_URL = $ELSEWHERE_CORS_PROXY_URL ('where to watch' deep links enabled)"
@@ -2868,6 +2896,11 @@ set_or_die_property_string "$SPOTLIGHT" "preferredVideoQuality" "$SPOTLIGHT_PREF
 set_or_die_property_raw    "$SPOTLIGHT" "enableSponsorBlock"    "$SPOTLIGHT_ENABLE_SPONSOR_BLOCK"
 set_or_die_property_raw    "$SPOTLIGHT" "CACHE_TTL_HOURS"       "$SPOTLIGHT_CACHE_TTL_HOURS"
 set_or_die_property_string "$SPOTLIGHT" "CORS_PROXY_URL"        "$SPOTLIGHT_CORS_PROXY_URL"
+if [ -n "$SPOTLIGHT_CORS_PROXY_URL" ]; then
+    warn "Spotlight.js: website scraping ON (ENABLE_SITE_SCRAPING=1): Rotten Tomatoes and AlloCine forbid automated access in their terms."
+else
+    ok "Spotlight.js: CORS_PROXY_URL empty (no website scraping)"
+fi
 set_or_die_property_raw    "$SPOTLIGHT" "enableCustomRatings"   "$SPOTLIGHT_ENABLE_CUSTOM_RATINGS"
 set_or_die_property_raw    "$SPOTLIGHT" "enableIMDb"            "$SPOTLIGHT_ENABLE_IMDB"
 set_or_die_property_raw    "$SPOTLIGHT" "enableTMDb"            "$SPOTLIGHT_ENABLE_TMDB"
@@ -2993,6 +3026,11 @@ set_or_die_property_raw    "$RATINGS" "enableMyAnimeList"    "$RATINGS_ENABLE_MY
 set_or_die_property_raw    "$RATINGS" "enableAniList"        "$RATINGS_ENABLE_ANI_LIST"
 set_or_die_property_raw    "$RATINGS" "CACHE_TTL_HOURS"      "$RATINGS_CACHE_TTL_HOURS"
 set_or_die_property_string "$RATINGS" "CORS_PROXY_URL"       "$RATINGS_CORS_PROXY_URL"
+if [ -n "$RATINGS_CORS_PROXY_URL" ]; then
+    warn "emby-ratings.js: website scraping ON (ENABLE_SITE_SCRAPING=1): Rotten Tomatoes and AlloCine forbid automated access in their terms."
+else
+    ok "emby-ratings.js: CORS_PROXY_URL empty (no website scraping)"
+fi
 
 for PAIR in "enableAwards:$RATINGS_ENABLE_AWARDS" "enableCustomRatings:$RATINGS_ENABLE_CUSTOM_RATINGS"; do
     if set_if_property_raw "$RATINGS" "${PAIR%%:*}" "${PAIR#*:}"; then
@@ -4344,6 +4382,7 @@ fi
     echo "    \"fallback_reason\": \"$(json_escape "$THEME_FALLBACK_REASON")\""
     echo "  },"
     echo "  \"cors_proxy_url\": \"$(json_escape "$CORS_PROXY_URL")\","
+    echo "  \"site_scraping_enabled\": $([ "$ENABLE_SITE_SCRAPING" = "1" ] && [ -n "$CORS_PROXY_URL" ] && echo true || echo false),"
     echo "  \"api_proxy_url\": \"$(json_escape "$API_PROXY_URL")\","
     echo "  \"third_party_keys_in_client\": $([ -n "$API_PROXY_URL" ] && echo false || echo true),"
     echo "  \"elsewhere\": {"
@@ -4579,21 +4618,18 @@ else
     echo "  keys embedded in the JS files (upstream behavior)."
 fi
 echo
-echo "CORS_PROXY_URL:"
-if [ -n "$CORS_PROXY_URL" ]; then
-    echo "  Configured in Spotlight.js, emby-ratings.js and emby-elsewhere.js:"
-    echo "  $CORS_PROXY_URL"
-    echo "  Enables the Rotten Tomatoes/Allocine scraping fallback and the"
-    echo "  'where to watch' deep links of Elsewhere. The proxy has an allowlist"
-    echo "  of destinations (see deploy/nginx/etc/nginx/snippets/emby-cors-proxy.conf);"
-    echo "  if the proxy does not"
-    echo "  respond, the addons keep working without those two improvements."
+echo "Website scraping (ENABLE_SITE_SCRAPING=$ENABLE_SITE_SCRAPING, CORS_PROXY_URL=${CORS_PROXY_URL:-empty}):"
+if [ -n "$RATINGS_CORS_PROXY_URL" ]; then
+    echo "  ON in Spotlight.js and emby-ratings.js: Rotten Tomatoes certified"
+    echo "  badges and AlloCine ratings are scraped through the proxy. Both sites"
+    echo "  forbid automated access in their terms; this was opted in."
 else
-    echo "  Empty (on purpose). It enables Elsewhere deep links and the Rotten"
-    echo "  Tomatoes/Allocine scraping fallback for old titles; it is forced"
-    echo "  to empty in the 3 addons. They work the same, just without those"
-    echo "  two specific improvements."
+    echo "  OFF. Rotten Tomatoes scores still come from the MDBList/OMDb APIs;"
+    echo "  the RT certified badges and the AlloCine ratings are not shown."
+    echo "  Opt in with ENABLE_SITE_SCRAPING=1 (see the disclaimers in the config"
+    echo "  example) if you accept those sites' terms risk."
 fi
+echo "  Elsewhere's 'where to watch' title links to TMDB's watch page (never scraped)."
 echo
 echo "Caches:"
 echo "  The addon <script> tags carry ?v=<sha256 prefix>, so browsers and a"

@@ -5,7 +5,12 @@
 # that must be rejected. Exit 0 only if every check passes.
 #
 # Usage:
-#   ./deploy/nginx/check.sh https://emby.example.com [--lan-origin http://192.168.1.10:8096] [--from-wan]
+#   ./deploy/nginx/check.sh https://emby.example.com [--lan-origin http://192.168.1.10:8096] [--from-wan] [--cors-upstream]
+#
+# --cors-upstream also fetches Rotten Tomatoes / AlloCine pages through the
+# CORS proxy (only meaningful with ENABLE_SITE_SCRAPING=1 in the installer;
+# those sites forbid automated access). Without it, only the checks nginx
+# answers by itself run (allow-list 403s, OPTIONS, POST).
 #
 # The base URL is the public Emby vhost (the one users open). --lan-origin
 # is the direct Emby URL on your LAN, used to check that the API proxy also
@@ -22,14 +27,15 @@
 # not.
 set -Eeuo pipefail
 
-BASE="${1:?usage: $0 https://emby.example.com [--lan-origin http://192.168.1.10:8096] [--from-wan]}"
+BASE="${1:?usage: $0 https://emby.example.com [--lan-origin http://192.168.1.10:8096] [--from-wan] [--cors-upstream]}"
 BASE="${BASE%/}"
-LAN_ORIGIN=""; FROM_WAN=0
+LAN_ORIGIN=""; FROM_WAN=0; CORS_UPSTREAM=0
 shift
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --lan-origin) LAN_ORIGIN="${2%/}"; shift 2 ;;
         --from-wan) FROM_WAN=1; shift ;;
+        --cors-upstream) CORS_UPSTREAM=1; shift ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -108,12 +114,19 @@ check "POST -> 405" 405 -X POST -H "$REF" "$BASE/api-proxy/tmdb/3/configuration"
 if grep -qiE 'api_key=|apikey=' "$TMP/body"; then echo "  [FAIL] a response body contains an API key parameter"; FAIL=$((FAIL + 1)); else echo "  [ok]   no API key leaks in response bodies"; PASS=$((PASS + 1)); fi
 
 echo "== CORS proxy (snippets/emby-cors-proxy.conf) =="
+if [ "$CORS_UPSTREAM" = "1" ]; then
 check "Rotten Tomatoes page via proxy" 200 "$BASE/cors-proxy/https://www.rottentomatoes.com/m/inception"
 header_is "Access-Control-Allow-Origin" "*" "  CORS header present"
 check "AlloCine page via proxy" 200 "$BASE/cors-proxy/https://www.allocine.fr/film/fichefilm_gen_cfilm=143692.html"
 check "merged-slash variant (https:/...)" 200 "$BASE/cors-proxy/https:/www.allocine.fr/film/fichefilm_gen_cfilm=143692.html"
-check "TMDB relative redirect rewritten -> 301" 301 "$BASE/cors-proxy/https://www.themoviedb.org/movie/27205/watch?locale=US"
-header_is "Location" "$BASE/cors-proxy/https://www.themoviedb.org/" "  Location goes back through the proxy"
+check "relative redirect rewritten -> 301" 301 "$BASE/cors-proxy/https://www.rottentomatoes.com/m/inception/"
+header_is "Location" "/cors-proxy/https://www.rottentomatoes.com/m/inception" "  Location goes back through the proxy"
+check "absolute redirect rewritten -> 301" 301 "$BASE/cors-proxy/https://rottentomatoes.com/m/inception"
+header_is "Location" "/cors-proxy/https://www.rottentomatoes.com/m/inception" "  Location goes back through the proxy"
+else
+echo "  (skipped: upstream page fetches; pass --cors-upstream to include them)"
+fi
+check "TMDB website not allow-listed -> 403" 403 "$BASE/cors-proxy/https://www.themoviedb.org/movie/27205/watch?locale=US"
 check "non-allow-listed host -> 403" 403 "$BASE/cors-proxy/https://example.com/"
 check "OPTIONS -> 204" 204 -X OPTIONS "$BASE/cors-proxy/https://www.rottentomatoes.com/m/x"
 check "POST -> 405" 405 -X POST "$BASE/cors-proxy/https://www.rottentomatoes.com/m/x"

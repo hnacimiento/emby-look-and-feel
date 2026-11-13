@@ -65,10 +65,21 @@ ELSEWHERE_IGNORE_PROVIDERS=""
 
 # --- Reverse proxy (optional, needs the nginx files under deploy/nginx/) ----
 
-# CORS proxy used by Spotlight/emby-ratings/emby-elsewhere for the Rotten
-# Tomatoes / AlloCiné scraping fallback and Elsewhere's deep links. The
-# addons append the full target URL to it, so keep the trailing slash.
-# Empty = feature off in the three addons.
+# Website scraping (Rotten Tomatoes certified badges, AlloCiné ratings).
+# OFF by default: 0 = off, 1 = on, and then CORS_PROXY_URL must be set too.
+# DISCLAIMER -- turning it on goes against these sites' terms:
+#   * Rotten Tomatoes (Fandango Terms of Use, s.6 and s.10) forbids robots,
+#     scripts, spiders, data extractors and systematic retrieval of data.
+#     With it off, RT critics/audience scores still come from the MDBList
+#     and OMDb APIs; only the Certified Fresh / Verified Hot badges are lost.
+#   * AlloCiné (CGU s.7.5 and s.8.1) allows private consultation only and
+#     forbids automated systems (robot, spider, offline reader) and data
+#     collection. AlloCiné has no public API: off = no AlloCiné ratings.
+# TMDB's website is never scraped, whatever this says.
+ENABLE_SITE_SCRAPING="0"
+
+# CORS proxy the addons use when ENABLE_SITE_SCRAPING=1. They append the
+# full target URL to it, so keep the trailing slash.
 CORS_PROXY_URL=""
 #CORS_PROXY_URL="https://emby.example.com/cors-proxy/"
 
@@ -130,6 +141,7 @@ SPOTLIGHT_ENABLE_METACRITIC="true"
 SPOTLIGHT_ENABLE_TRAKT="true"
 SPOTLIGHT_ENABLE_LETTERBOXD="true"
 SPOTLIGHT_ENABLE_ROGER_EBERT="true"
+# AlloCiné has no API: it only shows with ENABLE_SITE_SCRAPING="1".
 SPOTLIGHT_ENABLE_ALLOCINE="true"
 SPOTLIGHT_ENABLE_KINOPOISK="true"
 SPOTLIGHT_ENABLE_MY_ANIME_LIST="true"
@@ -155,6 +167,7 @@ RATINGS_ENABLE_METACRITIC="true"
 RATINGS_ENABLE_TRAKT="true"
 RATINGS_ENABLE_LETTERBOXD="true"
 RATINGS_ENABLE_ROGER_EBERT="true"
+# AlloCiné has no API: it only shows with ENABLE_SITE_SCRAPING="1".
 RATINGS_ENABLE_ALLOCINE="true"
 RATINGS_ENABLE_KINOPOISK="true"
 RATINGS_ENABLE_MY_ANIME_LIST="true"
