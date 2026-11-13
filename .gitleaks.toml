@@ -1,0 +1,27 @@
+# gitleaks configuration for this repository.
+# Used by the pre-commit hook (.githooks/pre-commit) and by manual scans:
+#   gitleaks git --redact --config .gitleaks.toml .
+[extend]
+useDefault = true
+
+# Extra rule: .env-style assignment of a sensitive variable with a literal value
+# (same line only, so an empty `KEY=` does not swallow the next line).
+[[rules]]
+id = "env-variable-with-value"
+description = "Sensitive variable assigned a literal value (.env style)"
+regex = '''(?i)\b[A-Z0-9_]*(PASSWORD|SECRET|TOKEN|API_KEY)[A-Z0-9_]*[ \t]*=[ \t]*['"]?[A-Za-z0-9_\-]{16,}'''
+
+# Known false positives, matched against the whole line (so they survive line
+# moves and apply to every rule). Keep each pattern specific to its fixture.
+[[allowlists]]
+regexTarget = "line"
+description = "Placeholders and test fixtures, not credentials"
+regexes = [
+  # install-emby-custom.sh: the placeholder written into addons instead of a real key.
+  '''via-nginx-api-proxy''',
+  # tests/unit/test_api_proxy_rewrite.sh: fake keys used to check the key-leak guard.
+  '''0123456789abcdef0123456789abcdef''',
+  '''kp-secret-value''',
+  # deploy/nginx/check.sh: all-zero bogus session cookie used to test the 401 path.
+  '''emby_proxy_token=0{16,}''',
+]

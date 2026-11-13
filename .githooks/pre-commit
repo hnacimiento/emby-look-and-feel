@@ -1,0 +1,10 @@
+#!/bin/sh
+# Before each commit: run gitleaks on the staged changes.
+# Enable once per clone with:  git config core.hooksPath .githooks
+# Point GITLEAKS at the binary if it is not on PATH.
+GL=${GITLEAKS:-gitleaks}
+if command -v "$GL" >/dev/null 2>&1; then
+    "$GL" git --staged --redact --no-banner --config .gitleaks.toml . || exit 1
+else
+    echo "warning: gitleaks not found (set GITLEAKS or add it to PATH); skipping secret scan" >&2
+fi

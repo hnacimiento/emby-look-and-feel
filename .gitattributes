@@ -13,3 +13,5 @@
 
 # Binary/opaque, never touched by line-ending conversion.
 *.zip binary
+.githooks/* text eol=lf
+.gitleaks.toml text eol=lf

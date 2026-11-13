@@ -43,6 +43,11 @@ docs/investigations/
 # parte del proyecto publicado.
 backup/
 
+# Local scratch space (temporary files, downloaded tools, scan reports) and
+# notes-app metadata. Never part of the project.
+.tmp/
+.obsidian/
+
 # OS / editor noise
 .DS_Store
 Thumbs.db
